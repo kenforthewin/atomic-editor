@@ -95,7 +95,6 @@
   padding-left: 1rem;
   border-left: 3px solid var(--atomic-editor-accent-soft, color-mix(in srgb, #7c3aed 72%, white 28%));
   color: var(--atomic-editor-fg-muted, #888);
-  font-style: italic;
 }
 
 /* Fenced-code lines — subtle backdrop so the block reads as code. */
@@ -138,7 +137,9 @@
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.15em;
-  cursor: pointer;
+  /* No pointer cursor on the link text — the text is editable like
+   * any other content. The pointer cursor is scoped to the trailing
+   * icon below, which is the actual open-in-new-tab affordance. */
 }
 
 .cm-atomic-link:hover {
@@ -155,6 +156,7 @@
   height: 0.78em;
   margin-left: 0.32em;
   vertical-align: -0.02em;
+  cursor: pointer;
   background-color: color-mix(in srgb, var(--atomic-editor-link, #60a5fa) 82%, white 18%);
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cg%3E%3Cpath d='M10.0002 5H8.2002C7.08009 5 6.51962 5 6.0918 5.21799C5.71547 5.40973 5.40973 5.71547 5.21799 6.0918C5 6.51962 5 7.08009 5 8.2002V15.8002C5 16.9203 5 17.4801 5.21799 17.9079C5.40973 18.2842 5.71547 18.5905 6.0918 18.7822C6.5192 19 7.07899 19 8.19691 19H15.8031C16.921 19 17.48 19 17.9074 18.7822C18.2837 18.5905 18.5905 18.2839 18.7822 17.9076C19 17.4802 19 16.921 19 15.8031V14M20 9V4M20 4H15M20 4L13 11' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cg%3E%3Cpath d='M10.0002 5H8.2002C7.08009 5 6.51962 5 6.0918 5.21799C5.71547 5.40973 5.40973 5.71547 5.21799 6.0918C5 6.51962 5 7.08009 5 8.2002V15.8002C5 16.9203 5 17.4801 5.21799 17.9079C5.40973 18.2842 5.71547 18.5905 6.0918 18.7822C6.5192 19 7.07899 19 8.19691 19H15.8031C16.921 19 17.48 19 17.9074 18.7822C18.2837 18.5905 18.5905 18.2839 18.7822 17.9076C19 17.4802 19 16.921 19 15.8031V14M20 9V4M20 4H15M20 4L13 11' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
@@ -170,21 +172,70 @@
   opacity: 1;
 }
 
+/* Horizontal rule — on inactive lines, the raw `***` / `---` /
+ * `___` characters are hidden by Decoration.replace, and a visual
+ * rule is drawn through the center of the line via a pseudo-element.
+ * The line keeps its natural line-height so height stays stable
+ * between active and inactive states (active shows the raw chars). */
+.cm-line.cm-atomic-hr {
+  position: relative;
+}
+
+.cm-line.cm-atomic-hr::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--atomic-editor-border, #3d3d3d);
+  pointer-events: none;
+}
+
+/* Image block widget — rendered below the source line containing
+ * the `![alt](url)` markdown. Natural image size up to the editor's
+ * content width (`max-width: 100%` of .cm-content, which is the
+ * reading-width column). Smaller images render at their own size,
+ * left-aligned. Aspect ratio preserved by `height: auto`. */
+.cm-atomic-image {
+  padding: 0.35em 0;
+}
+
+.cm-atomic-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.4em;
+}
+
 /* Bullet widget — replaces the raw `-` / `*` marker on bullet-list
  * items. Matches the visual weight of a real list marker while
  * staying in the muted-secondary color so the item text dominates. */
-.cm-atomic-bullet {
+/* Shared marker alcove — forces bullet, task checkbox, and
+ * ordered-list number into the same fixed horizontal width so the
+ * inline-preview line padding / text-indent math is stable across
+ * list kinds. Width here must match ALCOVE_EM in inline-preview.ts
+ * (`ListMark` branch). Without the fixed width, wrapped-line
+ * indent lands in different places for each kind because the raw
+ * marker widths differ per font. */
+.cm-atomic-list-marker {
   display: inline-block;
+  width: 0.6em;
+  margin-right: 0.3em;
+  text-align: right;
+}
+
+/* Bullet-only visual styling on top of the shared alcove. */
+.cm-atomic-bullet {
   color: var(--atomic-editor-fg-muted, #888);
   font-weight: 700;
-  margin-right: 0.1em;
 }
 
 /* GFM task-list checkbox widget — replaces `[ ]` / `[x]` in a task
- * item. contenteditable=false on the widget keeps the caret out;
- * clicks hit our JS listener instead of CM6's selection logic. */
+ * item. The checkbox sits inside the `.cm-atomic-list-marker`
+ * wrapper; `margin-right: 0` so the alcove width is entirely the
+ * wrapper's, not the checkbox's spacing. */
 .cm-atomic-task-checkbox {
-  margin: 0 0.45rem 0 0;
+  margin: 0;
   vertical-align: -0.08em;
   accent-color: var(--atomic-editor-accent, #7c3aed);
   cursor: pointer;
@@ -196,22 +247,259 @@
   text-decoration: line-through;
 }
 
-/* GFM tables — each row is a single .cm-line. Inner `|` delimiters
- * are hidden by empty Decoration.replace, so what the reader sees is
- * cells separated by spaces. The header gets a bottom rule; the
- * divider line (`|---|---|`) is hidden but still occupies its natural
- * line height as a subtle gap. */
-.cm-line.cm-atomic-table-row {
+/* WYSIWYG table block widget — emitted by `tables()` in
+ * table-widget.ts. The Table node's source range is fully replaced
+ * by this rendered `<table>`; users interact with cells directly
+ * via `contenteditable`, with Tab / Shift-Tab moving focus between
+ * cells and Tab past the last cell appending a new row.
+ *
+ * Horizontal scroll on the wrapper so wide tables (common in
+ * RSS-ingested content) don't squish their cells to unreadable
+ * widths on narrow viewports. The inner `<table>` uses
+ * `width: max-content` + `min-width: 100%` so it fills the reading
+ * column when narrow and grows past it (triggering the scrollbar)
+ * when content needs more room. `overscroll-behavior-x: contain`
+ * keeps a horizontal flick from bubbling up and scrolling the
+ * whole editor sideways. */
+/* Table wrapper — horizontal scroll contained here so wide
+ * tables don't push the editor's content box wider than the
+ * viewport. Paired with `.cm-content { min-width: 0 }` in the
+ * theme, which is what actually keeps the content box pinned to
+ * parent width (CM6's base theme sets `min-width: max-content`,
+ * which otherwise lets a wide child expand the whole scroller).
+ * Without that pairing no amount of table-level overflow
+ * constraints would hold — the symptom was the editor briefly
+ * going wider than the viewport on mobile when a wide table
+ * entered the rendered viewport. */
+.cm-atomic-table {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cm-atomic-table table {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
   font-family: var(--atomic-editor-font, system-ui, sans-serif);
 }
 
-.cm-line.cm-atomic-table-header {
-  font-weight: 700;
-  border-bottom: 1px solid var(--atomic-editor-border, #3d3d3d);
-  padding-bottom: 0.2em;
+.cm-atomic-table th,
+.cm-atomic-table td {
+  border: 1px solid var(--atomic-editor-border, #3d3d3d);
+  padding: 0.35em 0.6em;
+  text-align: left;
+  vertical-align: top;
+  min-width: 2em;
+  min-height: 1.5em;
 }
 
-.cm-line.cm-atomic-table-divider {
-  color: var(--atomic-editor-fg-faint, #666);
-  opacity: 0.5;
+.cm-atomic-table th {
+  font-weight: 700;
+  background: var(--atomic-editor-code-bg, color-mix(in srgb, #2d2d2d 88%, black 12%));
+}
+
+/* Cells aren't contenteditable themselves; the inner source element
+ * is. Outline the whole cell when focus lands inside so the edit
+ * target reads as "the cell" even though the DOM is split. */
+.cm-atomic-table th:focus-within,
+.cm-atomic-table td:focus-within {
+  outline: 2px solid var(--atomic-editor-accent, #7c3aed);
+  outline-offset: -2px;
+}
+
+/* The editable source inside a cell — always shows the raw markdown
+ * the user types, whether or not the cell also has a rendered image
+ * preview below. Blank outline because the cell's :focus-within
+ * ring is what signals the active edit target. */
+.cm-atomic-table-cell-source {
+  outline: none;
+  min-height: 1.2em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Rendered image preview strip below the source text. Mirrors how
+ * block-level images render outside a table: the `![alt](url)`
+ * markdown is the source of truth, but the user sees the image in
+ * the resting state — the raw markdown only appears when the cell
+ * is focused for editing (see :focus-within rule below). */
+.cm-atomic-table-cell-preview {
+  margin-top: 0.35em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  user-select: none;
+}
+
+/* Mirror the block-image invariant from outside tables: on an
+ * inactive cell, the raw `![alt](url)` markdown hides and only the
+ * rendered image shows. Focus the cell (click or Tab) to bring the
+ * source back so it can be edited.
+ *
+ * We visually hide the source without `display: none` so it stays in
+ * the DOM and remains focusable — Tab nav calls `source.focus()`
+ * explicitly and would silently fail on a display:none element. The
+ * position:absolute + zero-size pattern keeps the element interactive
+ * while taking no visible space. */
+.cm-atomic-table th[data-has-image]:not(:focus-within) .cm-atomic-table-cell-source,
+.cm-atomic-table td[data-has-image]:not(:focus-within) .cm-atomic-table-cell-source {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Inline images inside table cells. Capped so a tall image doesn't
+ * balloon a single row into half the viewport. Users who want larger
+ * in-cell images can do without for now — we'd need Obsidian's
+ * `[[file|width]]` alias syntax to make it controllable. */
+.cm-atomic-table-cell-image {
+  display: block;
+  max-width: 14em;
+  max-height: 5em;
+  border-radius: 0.2em;
+  cursor: pointer;
+}
+
+/* Table context menu — right-click a cell to insert / delete rows
+ * and columns. Mounted on document.body so positioning isn't
+ * affected by CM6's overflow scroll. */
+.cm-atomic-table-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 170px;
+  padding: 0.25rem 0;
+  background: var(--atomic-editor-bg-panel, #252525);
+  border: 1px solid var(--atomic-editor-border, #3d3d3d);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  font-family: var(--atomic-editor-font, system-ui, sans-serif);
+  font-size: 0.82rem;
+  color: var(--atomic-editor-fg, #dcddde);
+}
+
+.cm-atomic-table-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cm-atomic-table-menu-item:hover {
+  background: var(--atomic-editor-bg-surface, #2d2d2d);
+}
+
+.cm-atomic-table-menu-sep {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--atomic-editor-border, #3d3d3d);
+}
+
+/* Find-in-document panel — rendered at the top of the editor by the
+ * `search()` extension. We build our own panel DOM in the editor
+ * component (defaultSearchPanel) so we can expose the
+ * .atomic-editor-search-panel class and control the layout; the
+ * styles below theme that structure to match the rest of the app. */
+.atomic-editor-search-panel {
+  padding: 0.5rem 0.75rem;
+  background: var(--atomic-editor-bg-panel, #252525);
+  border-bottom: 1px solid var(--atomic-editor-border, #3d3d3d);
+  font-family: var(--atomic-editor-font, system-ui, sans-serif);
+  font-size: 0.82rem;
+  color: var(--atomic-editor-fg, #dcddde);
+}
+
+.atomic-editor-search-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cm-atomic-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cm-atomic-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  background: var(--atomic-editor-bg, #1e1e1e);
+  border: 1px solid var(--atomic-editor-border, #3d3d3d);
+  border-radius: 4px;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.cm-atomic-search-input:focus {
+  border-color: var(--atomic-editor-accent, #7c3aed);
+}
+
+.cm-atomic-search-btn {
+  padding: 0.3rem 0.6rem;
+  background: var(--atomic-editor-bg-surface, #2d2d2d);
+  border: 1px solid var(--atomic-editor-border, #3d3d3d);
+  border-radius: 4px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cm-atomic-search-btn:hover {
+  border-color: var(--atomic-editor-accent, #7c3aed);
+  color: var(--atomic-editor-accent-bright, #a78bfa);
+}
+
+.cm-atomic-search-close {
+  /* Tighter hit area for the close glyph — matches a typical "×"
+   * affordance without stretching the row. */
+  padding: 0.2rem 0.55rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.cm-atomic-search-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: var(--atomic-editor-fg-muted, #888);
+  font-size: 0.78rem;
+}
+
+.cm-atomic-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cm-atomic-search-toggle input[type='checkbox'] {
+  accent-color: var(--atomic-editor-accent, #7c3aed);
+}
+
+/* Highlight matches in the document. Active match gets a stronger
+ * fill; other matches share the same tone in a lighter shade. The
+ * background-color custom properties are pre-mixed in src/index.css
+ * to alpha-blend cleanly over whatever theme backdrop is active. */
+.cm-searchMatch {
+  background: var(--atomic-editor-search-bg, rgba(124, 58, 237, 0.28));
+  border-radius: 2px;
+}
+
+.cm-searchMatch-selected {
+  background: var(--atomic-editor-search-bg-active, rgba(124, 58, 237, 0.6));
 }

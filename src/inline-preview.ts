@@ -177,8 +177,12 @@ class BulletWidget extends WidgetType {
     return true;
   }
   toDOM(): HTMLElement {
+    // The `.cm-atomic-list-marker` class is what forces the
+    // uniform 1.2em inline-block alcove shared by bullets, task
+    // checkboxes, and ordered-list numbers. `.cm-atomic-bullet`
+    // layers on bullet-specific color / weight.
     const span = document.createElement('span');
-    span.className = 'cm-atomic-bullet';
+    span.className = 'cm-atomic-list-marker cm-atomic-bullet';
     span.textContent = '•';
     return span;
   }
@@ -199,10 +203,16 @@ class TaskCheckboxWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
+    // The `.cm-atomic-list-marker` class provides the uniform
+    // inline-block alcove shared by bullets, checkboxes, and
+    // ordered numbers. We apply it directly to the `<input>` so
+    // selectors like `input.cm-atomic-task-checkbox` still work
+    // (a wrapper span broke a Playwright probe that targets the
+    // input by its class).
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = this.checked;
-    input.className = 'cm-atomic-task-checkbox';
+    input.className = 'cm-atomic-list-marker cm-atomic-task-checkbox';
     input.setAttribute('contenteditable', 'false');
     input.addEventListener('mousedown', (e) => {
       e.preventDefault();
@@ -240,14 +250,28 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
     }
   }
 
-  const tree = ensureSyntaxTree(state, view.viewport.to, 50) ?? syntaxTree(state);
-  const viewportFrom = view.viewport.from;
-  const viewportTo = view.viewport.to;
+  // Decorate the whole parsed tree — not the current viewport — so
+  // that scrolling never needs to rebuild the decoration set. Prior
+  // design walked viewport-only and rebuilt on every scroll, which
+  // on iOS caused scroll-up momentum halts whenever new decorations
+  // were applied to lines at the top of the viewport (anchor
+  // conflict with the scroll animation). Cost: a one-shot whole-doc
+  // walk on every doc / selection / focus change instead of a
+  // smaller walk on every scroll.
+  //
+  // `ensureSyntaxTree(..., doc.length, ...)` guarantees the tree
+  // actually covers the whole doc before we walk it. Without this,
+  // for moderately long atoms the incremental parser's initial
+  // pass falls short of the end, we'd walk only a prefix, and
+  // content past that point renders as raw `##`/`**` forever —
+  // decorations don't rebuild on scroll anymore. Subsequent calls
+  // are near-free because ensureSyntaxTree short-circuits once the
+  // tree reaches the target.
+  const tree =
+    ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state);
 
   const taskMarkerByLine = new Map<number, number>();
   tree.iterate({
-    from: viewportFrom,
-    to: viewportTo,
     enter: (node) => {
       if (node.name === 'FencedCode') {
         const firstLine = doc.lineAt(node.from).number;
@@ -269,8 +293,6 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
   });
 
   tree.iterate({
-    from: viewportFrom,
-    to: viewportTo,
     enter: (node) => {
       const lineClass = LINE_CLASS_BY_BLOCK[node.name];
       if (lineClass) {
@@ -300,62 +322,137 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
         }
       }
 
+      // Backslash escapes: `\.`, `\*`, `\(`, etc. RSS-to-markdown
+      // converters escape a lot of punctuation defensively, and the
+      // backslashes show through as literal chars without preview.
+      // Hide just the leading backslash on inactive lines so the
+      // escaped character remains visible — mirrors how Obsidian
+      // renders escapes. The Escape node spans both characters
+      // (`\` + escaped char), so we only replace the first position.
+      if (node.name === 'Escape' && node.to - node.from >= 2) {
+        const lineNum = doc.lineAt(node.from).number;
+        if (!activeLines.has(lineNum)) {
+          ranges.push(Decoration.replace({}).range(node.from, node.from + 1));
+        }
+      }
+
       if (node.name === 'ListMark' && node.from < node.to) {
         const line = doc.lineAt(node.from);
         const lineNum = line.number;
         const taskFrom = taskMarkerByLine.get(lineNum);
 
+        // Hanging-indent every list item. Layout:
+        //
+        //   <--BASE--><--ALCOVE--> first-line text
+        //             •            wrapped lines land at the
+        //                          same column as the first-line
+        //                          text, not back under the marker
+        //
+        // ALCOVE_EM is a fixed 1.2em regardless of list kind.
+        // Every marker (bullet widget, checkbox widget, ordered
+        // number via mark decoration) is forced into an
+        // inline-block of exactly that width via CSS — so the
+        // alignment math doesn't depend on per-font marker
+        // widths. `padding-left` sets the content column;
+        // negative `text-indent` of the same magnitude pulls the
+        // first line back so the marker lands in the alcove.
         const rawIndent = node.from - line.from;
-        if (rawIndent >= 2) {
-          const depth = Math.floor(rawIndent / 2);
-          ranges.push(
-            Decoration.line({
-              attributes: { style: `padding-left: ${depth * 0.6}em` },
-            }).range(line.from),
-          );
-        }
+        const depth = Math.max(0, Math.floor(rawIndent / 2));
+        const BASE_EM = 0.8;
+        const ALCOVE_EM = 0.9;
+        const LEVEL_EM = 0.6;
+        const padding = BASE_EM + ALCOVE_EM + depth * LEVEL_EM;
+        ranges.push(
+          Decoration.line({
+            attributes: {
+              style: `padding-left: ${padding}em; text-indent: -${ALCOVE_EM}em`,
+            },
+          }).range(line.from),
+        );
+
+        // Figure out how far past node.to the mark's trailing
+        // space lives. For tasks, CM6 pre-computed taskFrom as
+        // the start of the `[ ]`; the `- ` span runs from
+        // node.from to taskFrom, which already covers the space.
+        // For bullets / ordered, include a single trailing space
+        // if present so text flows from padding-left without a
+        // spurious leading space.
+        const hasTrailingSpace =
+          doc.sliceString(node.to, node.to + 1) === ' ';
+        const markEnd = hasTrailingSpace ? node.to + 1 : node.to;
 
         if (taskFrom !== undefined) {
+          // Hide `- ` (ListMark through the space before `[`).
           ranges.push(Decoration.replace({}).range(node.from, taskFrom));
         } else {
           const markText = doc.sliceString(node.from, node.to);
           if (markText === '-' || markText === '*' || markText === '+') {
+            // Bullet: substitute with the fixed-width marker
+            // widget, swallowing the trailing space so content
+            // starts precisely at padding-left.
             ranges.push(
-              Decoration.replace({ widget: BULLET_WIDGET }).range(node.from, node.to),
+              Decoration.replace({ widget: BULLET_WIDGET }).range(
+                node.from,
+                markEnd,
+              ),
             );
+          } else {
+            // Ordered list (or anything else with a non-standard
+            // mark text like `1.`, `42.`): keep the text visible
+            // but mark it so CSS gives it the same fixed-width
+            // alcove. Hide the trailing space separately so the
+            // total marker-plus-space footprint matches ALCOVE.
+            ranges.push(
+              Decoration.mark({ class: 'cm-atomic-list-marker' }).range(
+                node.from,
+                node.to,
+              ),
+            );
+            if (hasTrailingSpace) {
+              ranges.push(Decoration.replace({}).range(node.to, markEnd));
+            }
           }
         }
       }
 
-      if (node.name === 'TableHeader' || node.name === 'TableRow') {
-        const startLine = doc.lineAt(node.from);
-        const endLine = doc.lineAt(node.to);
-        for (let n = startLine.number; n <= endLine.number; n++) {
-          const line = doc.line(n);
-          ranges.push(Decoration.line({ class: 'cm-atomic-table-row' }).range(line.from));
-          if (node.name === 'TableHeader') {
-            ranges.push(
-              Decoration.line({ class: 'cm-atomic-table-header' }).range(line.from),
-            );
-          }
+      // Tables are rendered by the separate `tables()` block-widget
+      // extension (./table-widget.ts) — the whole Table range is
+      // replaced with an interactive HTML `<table>`. Any inline
+      // decorations on TableHeader/TableRow/TableDelimiter would
+      // target ranges that are already hidden behind the replace
+      // widget, so they're intentionally absent from this builder.
+
+      if (node.name === 'HorizontalRule') {
+        // CommonMark HR: a line of `***`, `---`, or `___` (3+, any
+        // spacing between). On inactive lines we hide the characters
+        // and render a horizontal rule via CSS `::after`. On active
+        // lines we leave the raw characters visible so the user can
+        // edit the marker without it vanishing.
+        const line = doc.lineAt(node.from);
+        if (!activeLines.has(line.number)) {
+          ranges.push(Decoration.line({ class: 'cm-atomic-hr' }).range(line.from));
+          ranges.push(Decoration.replace({}).range(line.from, line.to));
         }
       }
 
-      if (node.name === 'TableDelimiter' && node.from < node.to) {
-        const lineNum = doc.lineAt(node.from).number;
-        const isActive = activeLines.has(lineNum);
-        if (node.to - node.from === 1) {
-          if (!isActive) {
-            ranges.push(Decoration.replace({}).range(node.from, node.to));
-          }
-        } else {
-          const line = doc.lineAt(node.from);
-          ranges.push(
-            Decoration.line({ class: 'cm-atomic-table-divider' }).range(line.from),
-          );
-          if (!isActive) {
-            ranges.push(Decoration.replace({}).range(node.from, node.to));
-          }
+      if (node.name === 'Image' && node.from < node.to) {
+        const imageLine = doc.lineAt(node.from);
+        const lineNum = imageLine.number;
+        if (!activeLines.has(lineNum)) {
+          // Hide the raw `![alt](url)` on inactive lines so only the
+          // rendered image block (emitted by the image-blocks state
+          // field below the line) shows. We deliberately keep the
+          // now-empty source `.cm-line` at its default line-height
+          // rather than collapsing it via `display: none`: on iOS
+          // Safari, toggling a line from its text-measured height
+          // to zero mid-scroll shifts every subsequent line up by
+          // that amount, which the scroll engine reads as an
+          // anchor conflict and halts kinetic momentum — visible
+          // as "scroll stops right before an image when you scroll
+          // back up." The tradeoff is one line of empty space
+          // above each rendered image, which actually reads a bit
+          // cleaner as visual separation anyway.
+          ranges.push(Decoration.replace({}).range(node.from, node.to));
         }
       }
 
@@ -397,10 +494,17 @@ const inlinePreviewPlugin = ViewPlugin.fromClass(
 
       if (nextFrozen && !justUnfroze) return;
 
+      // Note: `update.viewportChanged` is intentionally NOT in this
+      // list. Scrolling alone must not rebuild decorations — doing
+      // so on iOS halts momentum whenever the rebuild produces new
+      // decorations for lines at the top of a scroll-up viewport
+      // (CM6 anchor conflict with the scroll animation). Walking
+      // the whole parsed tree on the remaining triggers means
+      // scroll-time cost is zero; the tree walk itself is
+      // single-digit ms for typical atoms.
       if (
         justUnfroze ||
         update.docChanged ||
-        update.viewportChanged ||
         update.selectionSet ||
         update.focusChanged
       ) {
@@ -490,6 +594,28 @@ function makeLinkClickHandler(onLinkClick: (url: string) => void): Extension {
       if (!(target instanceof Element)) return false;
       const linkEl = target.closest<HTMLElement>('.cm-atomic-link');
       if (!linkEl) return false;
+
+      // Only fire on clicks within the trailing external-link icon,
+      // not on the link text itself. The text stays editable
+      // (click-to-place-caret); the icon is the explicit "open"
+      // affordance. The icon is a `::after` pseudo-element so we
+      // can't listen on it directly — compute its pixel bounds from
+      // the link's last client rect (last, because wrapped links
+      // only have the icon after the final visual line) and compare
+      // against the click coordinates.
+      const rects = Array.from(linkEl.getClientRects());
+      if (rects.length === 0) return false;
+      const lastRect = rects[rects.length - 1];
+      const emSize = parseFloat(window.getComputedStyle(linkEl).fontSize);
+      // Icon CSS: 0.78em width + 0.32em margin-left. Add a small hit
+      // slop so touch / imprecise mouse clicks still land.
+      const iconZone = emSize * 1.25;
+      const onIcon =
+        event.clientX >= lastRect.right - iconZone &&
+        event.clientX <= lastRect.right &&
+        event.clientY >= lastRect.top &&
+        event.clientY <= lastRect.bottom;
+      if (!onIcon) return false;
 
       const pos = view.posAtDOM(linkEl);
       if (pos < 0) return false;

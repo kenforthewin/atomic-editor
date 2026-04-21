@@ -27,9 +27,29 @@ export const atomicEditorTheme: Extension = EditorView.theme(
       caretColor: 'var(--atomic-editor-accent-bright, #a78bfa)',
       padding: '0',
       paddingBottom: '40vh',
+      // CM6's base theme sets `min-width: max-content` on
+      // `.cm-content` so it always grows to fit its widest child.
+      // That defeats every width constraint on our block widgets
+      // (tables especially): a wide table tells `.cm-content`
+      // "I'm 800px", content grows to 800px, and the scroller
+      // shows horizontal scroll — the "editor overflows
+      // horizontally" behavior you see on mobile when a wide
+      // table enters the viewport. Forcing `min-width: 0` lets
+      // the content box stay at its parent width; wide children
+      // are expected to own their own horizontal scroll (see
+      // `.cm-atomic-table-scroll`) rather than pushing the
+      // content.
+      minWidth: '0',
     },
     '.cm-line': {
       padding: '0',
+      // Force-wrap words that have no natural break opportunity —
+      // long URLs, base64 chunks, and code tokens that would
+      // otherwise overflow the line and push the scroll container
+      // wider than the viewport. Without this, long unbroken
+      // tokens blow past the reading column and we get the
+      // transient horizontal overflow on mobile.
+      overflowWrap: 'anywhere',
     },
     '&.cm-focused': {
       outline: 'none',
@@ -123,7 +143,7 @@ export const atomicMarkdownHighlight = HighlightStyle.define([
 
   { tag: t.processingInstruction, color: 'var(--atomic-editor-fg-faint, #666)' },
   { tag: t.contentSeparator, color: 'var(--atomic-editor-fg-faint, #666)' },
-  { tag: t.quote, color: 'var(--atomic-editor-fg-muted, #888)', fontStyle: 'italic' },
+  { tag: t.quote, color: 'var(--atomic-editor-fg-muted, #888)' },
   { tag: t.list, color: 'var(--atomic-editor-fg, #dcddde)' },
   { tag: t.meta, color: 'var(--atomic-editor-fg-faint, #666)' },
 
