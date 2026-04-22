@@ -27,13 +27,7 @@ a personal knowledge base, now standalone.
 ## Install
 
 ```bash
-npm install @atomic-editor/editor
-```
-
-Plus the CM6 runtime peers (you probably already have these):
-
-```bash
-npm install \
+npm install @atomic-editor/editor \
   @codemirror/state @codemirror/view @codemirror/commands \
   @codemirror/autocomplete @codemirror/language @codemirror/search \
   @codemirror/lang-markdown \
@@ -41,8 +35,16 @@ npm install \
   react react-dom
 ```
 
-Fenced-code language grammars are **optional peers** — install only the
-ones you want. See [Syntax highlighting](#syntax-highlighting) below.
+The CodeMirror and React packages are declared as **peer dependencies**
+rather than regular deps. You install them alongside the editor so
+your bundler resolves a single shared copy — two copies of
+`@codemirror/state` in one bundle would silently break the editor's
+state-field identity checks.
+
+Fenced-code language grammars (`@codemirror/lang-javascript`,
+`@codemirror/lang-python`, etc.) are **optional peers** — install only
+the ones you want highlighted. See
+[Syntax highlighting](#syntax-highlighting) below.
 
 ## Use
 
