@@ -48,13 +48,21 @@
 }
 
 /* Heading lines. Padding-top (not margin-top) creates the rhythm so
- * CM6's line-height measurement stays correct. */
+ * CM6's line-height measurement stays correct.
+ *
+ * These values are intentionally small (≤ 0.2em). Prior values
+ * (0.4em–0.7em) produced a tall visual strip above the heading's
+ * text that belongs to the heading's hit-box but looks identical to
+ * the empty separator line above it. Users would click the visual
+ * "blank space above the heading" and land on the heading by
+ * surprise. The empty markdown line before a heading (which almost
+ * every real doc has) supplies the rest of the rhythm naturally. */
 .cm-line.cm-atomic-h1 {
   font-size: 1.35em;
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: -0.015em;
-  padding-top: 0.4em;
+  padding-top: 0.15em;
   padding-bottom: 0.1em;
   color: var(--atomic-editor-fg, #dcddde);
 }
@@ -63,7 +71,7 @@
   font-size: 1.2em;
   font-weight: 700;
   line-height: 1.35;
-  padding-top: 0.7em;
+  padding-top: 0.15em;
   padding-bottom: 0.1em;
   color: var(--atomic-editor-fg, #dcddde);
 }
@@ -72,21 +80,21 @@
   font-size: 1.1em;
   font-weight: 600;
   line-height: 1.4;
-  padding-top: 0.55em;
+  padding-top: 0.12em;
   color: var(--atomic-editor-fg, #dcddde);
 }
 
 .cm-line.cm-atomic-h4 {
   font-size: 1em;
   font-weight: 600;
-  padding-top: 0.45em;
+  padding-top: 0.1em;
   color: var(--atomic-editor-fg, #dcddde);
 }
 
 .cm-line.cm-atomic-h5 {
   font-size: 0.95em;
   font-weight: 600;
-  padding-top: 0.35em;
+  padding-top: 0.08em;
   color: var(--atomic-editor-fg, #dcddde);
 }
 
@@ -95,7 +103,7 @@
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  padding-top: 0.35em;
+  padding-top: 0.08em;
   color: var(--atomic-editor-fg-muted, #888);
 }
 

@@ -853,6 +853,78 @@ async function probeTableCellMarkdown(page) {
   );
 }
 
+async function probeHeadingClickTargets(page) {
+  // Clicking in the visual "blank space" immediately above a heading
+  // should land on the empty line above, not on the heading itself.
+  // Prior padding-top values (0.4em–0.7em) made the heading's hit-box
+  // extend into what looked like blank space. Regression guard: the
+  // padding-top zone above a heading's text baseline must be small
+  // enough that a click ~8px above the heading's top lands on the
+  // preceding line, not on the heading.
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  for (let step = 0; step < 12; step++) {
+    const present = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line.cm-atomic-h2')).some(
+        (el) => (el.textContent || '').includes('And the usual markdown'),
+      ),
+    );
+    if (present) break;
+    await page.locator('.cm-scroller').evaluate((el) => {
+      el.scrollTop += 200;
+    });
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(200);
+
+  const info = await page.evaluate(() => {
+    const lines = Array.from(document.querySelectorAll('.cm-line'));
+    const h2Idx = lines.findIndex(
+      (el) =>
+        el.classList.contains('cm-atomic-h2') &&
+        (el.textContent || '').includes('And the usual markdown'),
+    );
+    if (h2Idx < 1) return null;
+    const h2 = lines[h2Idx];
+    const r = h2.getBoundingClientRect();
+    const cs = getComputedStyle(h2);
+    return { top: r.top, paddingTop: parseFloat(cs.paddingTop) || 0 };
+  });
+  if (!info) {
+    record('heading click: padding-top zone under 8px', 'fail', 'h2 not located');
+    return;
+  }
+  record(
+    'heading click: padding-top zone under 8px',
+    info.paddingTop < 8 ? 'pass' : 'fail',
+    `paddingTop=${info.paddingTop.toFixed(1)}px`,
+  );
+
+  // Click just above the heading's top edge — should land on the
+  // empty separator line, not the heading.
+  await page.mouse.click(300, Math.round(info.top - 4));
+  await page.waitForTimeout(120);
+  const landedAbove = await page.evaluate(() => {
+    const sel = window.getSelection();
+    const node = sel?.anchorNode;
+    const el =
+      node?.nodeType === 1
+        ? /** @type {Element} */ (node).closest?.('.cm-line')
+        : node?.parentElement?.closest?.('.cm-line');
+    if (!el) return null;
+    return {
+      isHeading: el.classList.contains('cm-atomic-h2'),
+      text: (el.textContent || '').slice(0, 40),
+    };
+  });
+  record(
+    'heading click: y above heading lands on preceding line',
+    landedAbove && !landedAbove.isHeading ? 'pass' : 'fail',
+    `isHeading=${landedAbove?.isHeading} text=${JSON.stringify(landedAbove?.text ?? '')}`,
+  );
+}
+
 async function probeHorizontalRule(page) {
   // The showcase section includes a `---` line. On inactive (cold)
   // state it should be classed as `cm-atomic-hr` so the CSS rule
@@ -1468,6 +1540,7 @@ async function run() {
     await probeNewBulletList(page);
     await probeNestedListExit(page);
     await probeCloseBrackets(page);
+    await probeHeadingClickTargets(page);
     await probeHorizontalRule(page);
     await probeTableWidget(page);
     await probeTableCellMarkdown(page);
