@@ -165,6 +165,12 @@ const HIDEABLE_SYNTAX = new Set([
   'QuoteMark',
 ]);
 
+// Children of a Link node whose visibility follows the link-scoped
+// rule (cursor-inside-link) instead of the default line-based rule.
+// The same token names can appear under an Image node — those stay
+// on the line-based rule because images are a different UX surface.
+const LINK_CHILD_SYNTAX = new Set(['LinkMark', 'URL', 'LinkTitle']);
+
 const INLINE_MARK_CLASS: Record<string, string> = {
   StrongEmphasis: 'cm-atomic-strong',
   Emphasis: 'cm-atomic-em',
@@ -272,6 +278,13 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
     ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state);
 
   const taskMarkerByLine = new Map<number, number>();
+  // `from` positions of Link nodes whose range overlaps a selection.
+  // Link children (LinkMark/URL/LinkTitle) hide unless their parent
+  // Link's `from` is in this set — i.e. the cursor has entered the
+  // link specifically, not merely landed on the same line. Images
+  // aren't included; they already have their own widget UX and the
+  // line-based reveal is the right fit for `![alt](url)`.
+  const activeLinkStarts = new Set<number>();
   tree.iterate({
     enter: (node) => {
       if (node.name === 'FencedCode') {
@@ -289,6 +302,16 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
         }
       } else if (node.name === 'TaskMarker') {
         taskMarkerByLine.set(doc.lineAt(node.from).number, node.from);
+      } else if (node.name === 'Link' && view.hasFocus) {
+        for (const range of state.selection.ranges) {
+          // Inclusive overlap: cursor sitting exactly on either
+          // boundary counts as inside, matching the UX where the
+          // next keystroke affects the link.
+          if (range.from <= node.to && range.to >= node.from) {
+            activeLinkStarts.add(node.from);
+            break;
+          }
+        }
       }
     },
   });
@@ -312,7 +335,27 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
 
       if (HIDEABLE_SYNTAX.has(node.name) && node.from < node.to) {
         const lineNum = doc.lineAt(node.from).number;
-        if (!activeLines.has(lineNum)) {
+
+        // Link children use a link-scoped rule (cursor-inside-link)
+        // rather than the line-based rule. A LinkMark under an
+        // Image node falls through to line-based — images have
+        // their own widget UX that the line-based reveal fits.
+        let shouldHide: boolean;
+        if (LINK_CHILD_SYNTAX.has(node.name)) {
+          let parent = node.node.parent;
+          while (parent && parent.name !== 'Link' && parent.name !== 'Image') {
+            parent = parent.parent;
+          }
+          if (parent && parent.name === 'Link') {
+            shouldHide = !activeLinkStarts.has(parent.from);
+          } else {
+            shouldHide = !activeLines.has(lineNum);
+          }
+        } else {
+          shouldHide = !activeLines.has(lineNum);
+        }
+
+        if (shouldHide) {
           let hideTo = node.to;
           if (node.name === 'HeaderMark' || node.name === 'QuoteMark') {
             while (hideTo < doc.length && doc.sliceString(hideTo, hideTo + 1) === ' ') {

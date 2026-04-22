@@ -786,6 +786,143 @@ async function probeBackslashEscape(page) {
   );
 }
 
+async function probeLinkScope(page) {
+  // Behavior under test: a link's raw `[text](url)` syntax should only
+  // reveal when the cursor is INSIDE the link itself — not merely on
+  // the same line. Obsidian-style link unfold. Contrasts with emphasis
+  // and headings, which still reveal line-wide.
+  //
+  // Sample line (in the showcase):
+  //   `A link to [Atomic](https://atomicapp.ai) for reference.`
+
+  // Reset scroll so we don't land on a link from a later section.
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.waitForTimeout(120);
+
+  // The deterministic showcase link line sits after the escapes line.
+  // Scroll until it's in the DOM.
+  for (let step = 0; step < 12; step++) {
+    const present = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line')).some((el) =>
+        (el.textContent || '').includes('A link to'),
+      ),
+    );
+    if (present) break;
+    await page.locator('.cm-scroller').evaluate((el) => {
+      el.scrollTop += 200;
+    });
+    await page.waitForTimeout(120);
+  }
+
+  // Initial (inactive) read: brackets and URL should be hidden.
+  const initialText = await page.evaluate(() => {
+    const line = Array.from(document.querySelectorAll('.cm-line')).find(
+      (el) => (el.textContent || '').includes('A link to'),
+    );
+    return line ? (line.textContent || '') : null;
+  });
+  if (!initialText) {
+    record('link: inactive line hides brackets + URL', 'fail', 'sample line not rendered');
+    return;
+  }
+  const initiallyCollapsed =
+    initialText.includes('A link to Atomic for reference.') &&
+    !initialText.includes('https://') &&
+    !initialText.includes('](');
+  record(
+    'link: inactive line hides brackets + URL',
+    initiallyCollapsed ? 'pass' : 'fail',
+    `text=${JSON.stringify(initialText.slice(0, 80))}`,
+  );
+
+  // Click somewhere on the same line but NOT on the link — between
+  // "A" and "link", near the start. Old behavior revealed the URL
+  // for the whole line. New behavior should keep the link collapsed.
+  const lineHandle = page.locator('.cm-line', { hasText: 'A link to' }).first();
+  const box = await lineHandle.boundingBox();
+  if (!box) {
+    record('link: line-active-but-outside-link stays collapsed', 'fail', 'no bbox');
+    return;
+  }
+  await page.mouse.click(box.x + 10, box.y + box.height / 2);
+  await page.waitForTimeout(200);
+  const lineActiveText = await page.evaluate(() => {
+    const line = Array.from(document.querySelectorAll('.cm-line')).find(
+      (el) => (el.textContent || '').includes('A link'),
+    );
+    return line ? (line.textContent || '') : null;
+  });
+  const stayedCollapsed =
+    lineActiveText !== null &&
+    !lineActiveText.includes('](') &&
+    !lineActiveText.includes('https://');
+  record(
+    'link: line-active-but-outside-link stays collapsed',
+    stayedCollapsed ? 'pass' : 'fail',
+    `text=${JSON.stringify((lineActiveText ?? '').slice(0, 80))}`,
+  );
+
+  // Now click directly on the link's rendered text. Reach through
+  // the .cm-atomic-link span to get a click target that lands on
+  // the link's text range.
+  const linkBox = await page.evaluate(() => {
+    const lines = Array.from(document.querySelectorAll('.cm-line'));
+    const line = lines.find((el) => (el.textContent || '').includes('A link to'));
+    if (!line) return null;
+    const link = line.querySelector('.cm-atomic-link');
+    if (!link) return null;
+    const r = link.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  if (!linkBox) {
+    record('link: cursor inside link reveals brackets + URL', 'fail', 'no .cm-atomic-link');
+    return;
+  }
+  // Click slightly left of the right edge of the span to avoid the
+  // external-link icon zone (last ~1.25em), which triggers open-URL.
+  await page.mouse.click(linkBox.x + Math.max(4, linkBox.w * 0.4), linkBox.y + linkBox.h / 2);
+  await page.waitForTimeout(200);
+  const insideLinkText = await page.evaluate(() => {
+    const line = Array.from(document.querySelectorAll('.cm-line')).find(
+      (el) => (el.textContent || '').includes('A link'),
+    );
+    return line ? (line.textContent || '') : null;
+  });
+  const revealed =
+    insideLinkText !== null &&
+    insideLinkText.includes('](') &&
+    insideLinkText.includes('https://atomicapp.ai');
+  record(
+    'link: cursor inside link reveals brackets + URL',
+    revealed ? 'pass' : 'fail',
+    `text=${JSON.stringify((insideLinkText ?? '').slice(0, 80))}`,
+  );
+
+  // Finally, click outside the line entirely and confirm the link
+  // collapses back.
+  const escapesLine = page.locator('.cm-line', { hasText: 'Escapes like' }).first();
+  if ((await escapesLine.count()) > 0) {
+    const eBox = await escapesLine.boundingBox();
+    if (eBox) {
+      await page.mouse.click(eBox.x + 10, eBox.y + eBox.height / 2);
+      await page.waitForTimeout(200);
+      const collapsedAgain = await page.evaluate(() => {
+        const line = Array.from(document.querySelectorAll('.cm-line')).find(
+          (el) => (el.textContent || '').includes('A link to'),
+        );
+        return line ? !((line.textContent || '').includes('](')) : false;
+      });
+      record(
+        'link: cursor leaves link → collapses again',
+        collapsedAgain ? 'pass' : 'fail',
+        `collapsedAgain=${collapsedAgain}`,
+      );
+    }
+  }
+}
+
 async function probeImageBlock(page) {
   // The sample's Block showcase section includes an image; after
   // mount there should be at least one rendered `.cm-atomic-image`
@@ -1139,6 +1276,7 @@ async function run() {
     await probeTableFromMarkdown(page);
     await probeImageBlock(page);
     await probeBackslashEscape(page);
+    await probeLinkScope(page);
     await probeTaskList(page);
     await probeCursorPingPong(page);
     await probeTyping(page);

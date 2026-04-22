@@ -340,6 +340,10 @@ export function generateSampleMarkdown(
     // punctuation. Readers should see plain text on inactive lines;
     // focusing the line reveals the raw escapes.
     'Escapes like domain\\.com and 3\\.14 should render clean until focused\\.',
+    // Deterministic link line so probes have a stable target. Rendered
+    // as `A link to Atomic for reference.` on inactive cursor; clicking
+    // inside the link reveals `[Atomic](https://atomicapp.ai)`.
+    'A link to [Atomic](https://atomicapp.ai) for reference.',
   );
   for (let i = 1; i <= SECTIONS_PER_SIZE[size]; i++) {
     // When separators are on, drop an HR between every section so a
