@@ -37,7 +37,7 @@ export function App() {
     <div className="demo-root" data-theme={theme}>
       <header className="demo-header">
         <div className="demo-identity">
-          <h1 className="demo-title">@atomic-editor/editor</h1>
+          <h1 className="demo-title">Atomic Editor</h1>
           <p className="demo-sub">
             CodeMirror 6 markdown editor with Obsidian-style inline live preview.
           </p>
