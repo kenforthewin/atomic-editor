@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "paths": {
+      "@atomic-editor/editor": ["./src/index.ts"],
+      "@atomic-editor/editor/code-languages": ["./src/code-languages.ts"]
+    }
+  },
+  "include": ["src", "demo", "vite.config.ts", "vitest.config.ts"]
+}

@@ -10,7 +10,7 @@ import {
   type Panel,
 } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
-import { indentOnInput } from '@codemirror/language';
+import { indentOnInput, type LanguageDescription } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import {
   defaultKeymap,
@@ -34,12 +34,15 @@ import {
   setSearchQuery,
 } from '@codemirror/search';
 
-import { ATOMIC_CODE_LANGUAGES } from './code-languages';
 import { atomicEditorTheme, atomicMarkdownSyntax } from './atomic-theme';
 import { extendEmphasisPair } from './edit-helpers';
 import { imageBlocks } from './image-blocks';
 import { inlinePreview } from './inline-preview';
 import { tables } from './table-widget';
+
+// Stable reference so a consumer that doesn't pass `codeLanguages`
+// doesn't force-remount the editor on every render.
+const EMPTY_CODE_LANGUAGES: readonly LanguageDescription[] = [];
 
 export interface AtomicCodeMirrorEditorHandle {
   focus: () => void;
@@ -107,6 +110,25 @@ export interface AtomicCodeMirrorEditorProps {
    * from outside the editor, pulling the current markdown on demand.
    */
   editorHandleRef?: MutableRefObject<AtomicCodeMirrorEditorHandle | null>;
+
+  /**
+   * Grammars to load for fenced code blocks whose info string matches.
+   * `@codemirror/lang-markdown` lazy-imports each grammar on first use
+   * (no cost until a matching fence appears), so passing a large list
+   * is fine. Defaults to `[]` — fences render as plain monospace.
+   *
+   * For a curated ~20-language default, install the peers and import
+   * the registry:
+   *
+   * ```ts
+   * import { ATOMIC_CODE_LANGUAGES } from '@atomic-editor/editor/code-languages';
+   * <AtomicCodeMirrorEditor codeLanguages={ATOMIC_CODE_LANGUAGES} ... />
+   * ```
+   *
+   * Or build your own list from the `LanguageDescription` factory
+   * exported by `@codemirror/language`.
+   */
+  codeLanguages?: readonly LanguageDescription[];
 }
 
 /**
@@ -116,7 +138,7 @@ export interface AtomicCodeMirrorEditorProps {
  * Remember to import the accompanying CSS:
  *
  * ```ts
- * import '@atomic/editor/styles.css';
+ * import '@atomic-editor/editor/styles.css';
  * ```
  */
 export function AtomicCodeMirrorEditor({
@@ -127,6 +149,7 @@ export function AtomicCodeMirrorEditor({
   onMarkdownChange,
   onLinkClick,
   editorHandleRef,
+  codeLanguages = EMPTY_CODE_LANGUAGES,
 }: AtomicCodeMirrorEditorProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -182,7 +205,7 @@ export function AtomicCodeMirrorEditor({
           // GFM via base: markdownLanguage — tables, strikethrough,
           // task lists, autolinks. Without this, the parser is pure
           // CommonMark and inline-preview never sees Task / Table.
-          markdown({ base: markdownLanguage, codeLanguages: ATOMIC_CODE_LANGUAGES }),
+          markdown({ base: markdownLanguage, codeLanguages: [...codeLanguages] }),
           // Extend closeBrackets to markdown's symmetric delimiters.
           markdownLanguage.data.of({
             closeBrackets: { brackets: ['(', '[', '{', "'", '"', '*', '_', '`'] },

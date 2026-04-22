@@ -526,3 +526,42 @@
 .cm-searchMatch-selected {
   background: var(--atomic-editor-search-bg-active, rgba(124, 58, 237, 0.6));
 }
+
+/* Light-theme overrides. Consumers opt in by setting `data-theme="light"`
+ * on any ancestor of the editor. The dark defaults above remain unchanged;
+ * this block just re-maps the `--atomic-editor-*` variables with light
+ * values so the same class graph renders cleanly on a pale backdrop.
+ *
+ * Code-highlight colors swap from Material Palenight to a set tuned for
+ * light backgrounds — the palette ideas come from GitHub's light theme
+ * and the original Solarized Light. */
+[data-theme="light"] .atomic-cm-editor {
+  --atomic-editor-fg: #24292f;
+  --atomic-editor-fg-muted: #57606a;
+  --atomic-editor-fg-faint: #8c959f;
+  --atomic-editor-bg: #ffffff;
+  --atomic-editor-bg-panel: #f6f8fa;
+  --atomic-editor-bg-surface: #eaeef2;
+  --atomic-editor-border: #d0d7de;
+  --atomic-editor-accent: #6639ba;
+  --atomic-editor-accent-bright: #8250df;
+  --atomic-editor-link: #0969da;
+  --atomic-editor-link-hover: #1f6feb;
+  --atomic-editor-code-bg: #f6f8fa;
+  --atomic-editor-selection-bg: rgba(84, 174, 255, 0.25);
+  --atomic-editor-search-bg: rgba(251, 189, 8, 0.35);
+  --atomic-editor-search-bg-active: rgba(251, 189, 8, 0.6);
+  --atomic-editor-hl-keyword: #cf222e;
+  --atomic-editor-hl-string: #0a3069;
+  --atomic-editor-hl-number: #0550ae;
+  --atomic-editor-hl-comment: #6e7781;
+  --atomic-editor-hl-type: #953800;
+  --atomic-editor-hl-function: #8250df;
+  --atomic-editor-hl-property: #0550ae;
+  --atomic-editor-hl-regexp: #116329;
+  --atomic-editor-hl-escape: #0550ae;
+  --atomic-editor-hl-tag: #116329;
+  --atomic-editor-hl-variable: #24292f;
+  --atomic-editor-hl-operator: #cf222e;
+  --atomic-editor-hl-invalid: #82071e;
+}
