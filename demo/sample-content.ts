@@ -324,13 +324,20 @@ export function generateSampleMarkdown(
   if (includeLists) sections.push(list(rng), taskList(rng));
   if (includeTables) {
     // Deterministic inline-marks table so probes can target a known
-    // bold / italic / strike / link cell. Each column exercises one
-    // mark type; the plain column is the baseline.
+    // bold / italic / strike / link cell. First row is the baseline
+    // (the probe targets row 0); subsequent rows add variety so the
+    // demo surfaces every supported combination at a glance —
+    // delimiter variants, nesting, escapes, and cases that should
+    // deliberately NOT decorate.
     sections.push(
       [
         '| Plain | Bold | Italic | Strike | Link |',
         '|---|---|---|---|---|',
         '| plain text | **bold text** | *italic text* | ~~struck text~~ | [example](https://example.org) |',
+        '| alt delim | __also bold__ | _also italic_ | ~~gone gone~~ | [github](https://github.com) |',
+        '| nesting | **bold with _italic_ inside** | *italic with **bold** inside* | ~~strike with **bold**~~ | [text **bold** here](https://example.org) |',
+        '| escapes | \\*literal stars\\* | \\_literal underscores\\_ | \\~\\~not strike\\~\\~ | \\[not a link\\] |',
+        '| non-matches | snake_case_var | ident_with_underscores | `code stays raw` | https://example.org raw url |',
       ].join('\n'),
       table(rng, imageless),
     );
