@@ -300,7 +300,7 @@ export function AtomicCodeMirrorEditor({
     };
   }, [editorHandleRef]);
 
-  return <div ref={rootRef} className="atomic-cm-editor relative h-full w-full" />;
+  return <div ref={rootRef} className="atomic-cm-editor" />;
 }
 
 // ---------------------------------------------------------------------

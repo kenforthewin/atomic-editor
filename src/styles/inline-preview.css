@@ -20,6 +20,17 @@
  * any ancestor of the editor to theme it for your app.
  */
 
+/* Root container — fills its parent so the CM6 scroller can take over
+ * scrolling behavior. Previously relied on Tailwind `h-full w-full`
+ * applied in the React layer, which only worked for consumers who had
+ * Tailwind configured. Baking the sizing into the package means
+ * dropping the editor into any height-bounded parent just works. */
+.atomic-cm-editor {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
 /* Content container — constrain to a comfortable reading width. This
  * is where the prose feel mostly comes from: line length in the
  * 60–75ch range is what lets the eye sweep naturally. The full editor

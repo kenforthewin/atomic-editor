@@ -1,31 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AtomicCodeMirrorEditor,
-  type AtomicCodeMirrorEditorHandle,
-} from '@atomic-editor/editor';
+import { useEffect, useMemo, useState } from 'react';
+import { AtomicCodeMirrorEditor } from '@atomic-editor/editor';
 import { ATOMIC_CODE_LANGUAGES } from '@atomic-editor/editor/code-languages';
 import '@atomic-editor/editor/styles.css';
 import {
-  CODE_BLOCKS_MODES,
-  LISTS_MODES,
-  SAMPLE_MODES,
   SAMPLE_SIZES,
-  SEPARATORS_MODES,
-  TABLES_MODES,
   generateSampleMarkdown,
-  type CodeBlocksMode,
-  type ListsMode,
-  type SampleMode,
   type SampleSize,
-  type SeparatorsMode,
-  type TablesMode,
 } from './sample-content';
-import { MinimalCodeMirrorEditor } from './MinimalEditor';
-import { NoPreviewCodeMirrorEditor } from './NoPreviewEditor';
-import { ScrollDiagnostics } from './ScrollDiagnostics';
 
-type EditorFlavor = 'atomic' | 'no-preview' | 'minimal';
-const EDITOR_FLAVORS: EditorFlavor[] = ['atomic', 'no-preview', 'minimal'];
 type ThemeMode = 'dark' | 'light';
 
 function formatBytes(chars: number): string {
@@ -35,57 +17,17 @@ function formatBytes(chars: number): string {
 }
 
 export function App() {
-  const [flavor, setFlavor] = useState<EditorFlavor>('atomic');
-  const [sampleMode, setSampleMode] = useState<SampleMode>('with images');
   const [sampleSize, setSampleSize] = useState<SampleSize>('10 pages');
-  const [codeBlocksMode, setCodeBlocksMode] = useState<CodeBlocksMode>('with code blocks');
-  const [listsMode, setListsMode] = useState<ListsMode>('with lists');
-  const [separatorsMode, setSeparatorsMode] = useState<SeparatorsMode>('with separators');
-  const [tablesMode, setTablesMode] = useState<TablesMode>('with tables');
-  const [codeLangsOn, setCodeLangsOn] = useState(true);
   const [theme, setTheme] = useState<ThemeMode>('dark');
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-
-  const editorHandleRef = useRef<AtomicCodeMirrorEditorHandle | null>(null);
 
   const markdownSource = useMemo(
-    () =>
-      generateSampleMarkdown(sampleSize, {
-        mode: sampleMode,
-        codeBlocks: codeBlocksMode,
-        lists: listsMode,
-        separators: separatorsMode,
-        tables: tablesMode,
-      }),
-    [sampleMode, sampleSize, codeBlocksMode, listsMode, separatorsMode, tablesMode],
+    () => generateSampleMarkdown(sampleSize),
+    [sampleSize],
   );
 
-  // Identity for remount — any toggle that changes the document forces
-  // a fresh editor so cursor/undo state from the previous sample
-  // doesn't leak into the next.
-  const documentId = useMemo(
-    () =>
-      [
-        flavor,
-        sampleMode,
-        sampleSize,
-        codeBlocksMode,
-        listsMode,
-        separatorsMode,
-        tablesMode,
-        codeLangsOn ? 'langs' : 'nolangs',
-      ].join(':'),
-    [
-      flavor,
-      sampleMode,
-      sampleSize,
-      codeBlocksMode,
-      listsMode,
-      separatorsMode,
-      tablesMode,
-      codeLangsOn,
-    ],
-  );
+  // Remount when the document changes so cursor/undo state from the
+  // previous sample doesn't leak into the next.
+  const documentId = `${sampleSize}`;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -100,7 +42,7 @@ export function App() {
         </p>
         <a
           className="demo-github"
-          href="https://github.com/kenforthewin/editor"
+          href="https://github.com/kenforthewin/atomic-editor"
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -118,111 +60,26 @@ export function App() {
           />
         </Section>
 
-        <Section label="Editor flavor">
-          <SegmentedControl
-            value={flavor}
-            options={EDITOR_FLAVORS.map((f) => ({ value: f, label: f }))}
-            onChange={setFlavor}
-          />
-          <p className="demo-hint">
-            <code>atomic</code> is the full library. <code>no-preview</code>{' '}
-            disables inline preview; <code>minimal</code> is bare CM6 with
-            lang-markdown — both are used to isolate perf regressions.
-          </p>
-        </Section>
-
         <Section label="Sample size">
           <SegmentedControl
             value={sampleSize}
             options={SAMPLE_SIZES.map((s) => ({ value: s, label: s }))}
             onChange={setSampleSize}
           />
-          <p className="demo-hint">Document is {formatBytes(markdownSource.length)}.</p>
-        </Section>
-
-        <Section label="Images">
-          <SegmentedControl
-            value={sampleMode}
-            options={SAMPLE_MODES.map((m) => ({ value: m, label: m }))}
-            onChange={setSampleMode}
-          />
-        </Section>
-
-        <Section label="Blocks">
-          <SegmentedControl
-            value={codeBlocksMode}
-            options={CODE_BLOCKS_MODES.map((m) => ({ value: m, label: m }))}
-            onChange={setCodeBlocksMode}
-          />
-          <SegmentedControl
-            value={listsMode}
-            options={LISTS_MODES.map((m) => ({ value: m, label: m }))}
-            onChange={setListsMode}
-          />
-          <SegmentedControl
-            value={tablesMode}
-            options={TABLES_MODES.map((m) => ({ value: m, label: m }))}
-            onChange={setTablesMode}
-          />
-          <SegmentedControl
-            value={separatorsMode}
-            options={SEPARATORS_MODES.map((m) => ({ value: m, label: m }))}
-            onChange={setSeparatorsMode}
-          />
-        </Section>
-
-        <Section label="Code-language highlighting">
-          <label className="demo-checkbox">
-            <input
-              type="checkbox"
-              checked={codeLangsOn}
-              onChange={(e) => setCodeLangsOn(e.target.checked)}
-            />
-            <span>
-              Load curated grammars (~20 languages, lazy-loaded per fence)
-            </span>
-          </label>
-        </Section>
-
-        <Section label="Diagnostics">
-          <label className="demo-checkbox">
-            <input
-              type="checkbox"
-              checked={showDiagnostics}
-              onChange={(e) => setShowDiagnostics(e.target.checked)}
-            />
-            <span>Show scroll diagnostics overlay</span>
-          </label>
           <p className="demo-hint">
-            Detects momentum scroll halts (useful on iOS). Only active while
-            visible.
+            Document is {formatBytes(markdownSource.length)}. Scroll, edit,
+            select, copy — the raw markdown stays the source of truth.
           </p>
         </Section>
       </aside>
 
       <main className="demo-canvas">
-        {flavor === 'atomic' && (
-          <AtomicCodeMirrorEditor
-            markdownSource={markdownSource}
-            documentId={documentId}
-            editorHandleRef={editorHandleRef}
-            codeLanguages={codeLangsOn ? ATOMIC_CODE_LANGUAGES : undefined}
-            onLinkClick={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
-          />
-        )}
-        {flavor === 'no-preview' && (
-          <NoPreviewCodeMirrorEditor
-            markdownSource={markdownSource}
-            documentId={documentId}
-          />
-        )}
-        {flavor === 'minimal' && (
-          <MinimalCodeMirrorEditor
-            markdownSource={markdownSource}
-            documentId={documentId}
-          />
-        )}
-        {showDiagnostics && <ScrollDiagnostics />}
+        <AtomicCodeMirrorEditor
+          markdownSource={markdownSource}
+          documentId={documentId}
+          codeLanguages={ATOMIC_CODE_LANGUAGES}
+          onLinkClick={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
+        />
       </main>
     </div>
   );
