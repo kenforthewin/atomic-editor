@@ -324,14 +324,11 @@ export function generateSampleMarkdown(
   if (includeLists) sections.push(list(rng), taskList(rng));
   if (includeTables) sections.push(table(rng, imageless));
   if (!imageless) {
-    // Stable, recognizable real-world image for eyeballing the
-    // image-block widget + a randomized picsum one for aspect-ratio
-    // coverage. Both omitted in imageless mode so the harness can
-    // isolate image-independent layout / scroll behavior.
-    sections.push(
-      '![Atomic wiki](https://atomicapp.ai/_astro/wiki.DfwCBzh6_Z1l0asA.webp)',
-      imageBlock(rng),
-    );
+    // Seeded picsum image — deterministic (same seed → same image
+    // bytes) so the image-block widget, screenshots, and scroll
+    // measurements stay stable across runs. Omitted in imageless
+    // mode to isolate image-independent layout / scroll behavior.
+    sections.push(imageBlock(rng));
   }
   if (includeCodeBlocks) sections.push(codeBlock(rng));
   sections.push(
@@ -341,9 +338,9 @@ export function generateSampleMarkdown(
     // focusing the line reveals the raw escapes.
     'Escapes like domain\\.com and 3\\.14 should render clean until focused\\.',
     // Deterministic link line so probes have a stable target. Rendered
-    // as `A link to Atomic for reference.` on inactive cursor; clicking
-    // inside the link reveals `[Atomic](https://atomicapp.ai)`.
-    'A link to [Atomic](https://atomicapp.ai) for reference.',
+    // as `A link to example for reference.` on inactive cursor; clicking
+    // inside the link reveals `[example](https://example.org)`.
+    'A link to [example](https://example.org) for reference.',
   );
   for (let i = 1; i <= SECTIONS_PER_SIZE[size]; i++) {
     // When separators are on, drop an HR between every section so a

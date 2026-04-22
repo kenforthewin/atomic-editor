@@ -793,7 +793,7 @@ async function probeLinkScope(page) {
   // and headings, which still reveal line-wide.
   //
   // Sample line (in the showcase):
-  //   `A link to [Atomic](https://atomicapp.ai) for reference.`
+  //   `A link to [example](https://example.org) for reference.`
 
   // Reset scroll so we don't land on a link from a later section.
   await page.locator('.cm-scroller').evaluate((el) => {
@@ -828,7 +828,7 @@ async function probeLinkScope(page) {
     return;
   }
   const initiallyCollapsed =
-    initialText.includes('A link to Atomic for reference.') &&
+    initialText.includes('A link to example for reference.') &&
     !initialText.includes('https://') &&
     !initialText.includes('](');
   record(
@@ -893,7 +893,7 @@ async function probeLinkScope(page) {
   const revealed =
     insideLinkText !== null &&
     insideLinkText.includes('](') &&
-    insideLinkText.includes('https://atomicapp.ai');
+    insideLinkText.includes('https://example.org');
   record(
     'link: cursor inside link reveals brackets + URL',
     revealed ? 'pass' : 'fail',
