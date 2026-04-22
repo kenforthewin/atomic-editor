@@ -17,6 +17,7 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view';
+import { treeGrowthEffect, treeProgressPlugin } from './tree-progress';
 
 // Inline preview — the Obsidian "Live Preview" model.
 //
@@ -634,6 +635,21 @@ const inlinePreviewPlugin = ViewPlugin.fromClass(
 
       if (nextFrozen && !justUnfroze) return;
 
+      // Tree-growth effect: background parser advanced past where
+      // we last walked. For docs large enough that the initial
+      // parse didn't reach the end, later blocks (headings, lists,
+      // etc.) render as raw `##`/`**` until this fires.
+      let treeGrew = false;
+      for (const tr of update.transactions) {
+        for (const effect of tr.effects) {
+          if (effect.is(treeGrowthEffect)) {
+            treeGrew = true;
+            break;
+          }
+        }
+        if (treeGrew) break;
+      }
+
       // Note: `update.viewportChanged` is intentionally NOT in this
       // list. Scrolling alone must not rebuild decorations — doing
       // so on iOS halts momentum whenever the rebuild produces new
@@ -646,7 +662,8 @@ const inlinePreviewPlugin = ViewPlugin.fromClass(
         justUnfroze ||
         update.docChanged ||
         update.selectionSet ||
-        update.focusChanged
+        update.focusChanged ||
+        treeGrew
       ) {
         this.decorations = buildInlineDecorations(update.view);
       }
@@ -791,6 +808,7 @@ export function inlinePreview(config: InlinePreviewConfig = {}): Extension {
     previewFrozenField,
     inlinePreviewPlugin,
     freezeMousePlugin,
+    treeProgressPlugin,
     makeLinkClickHandler(onLinkClick),
     // Prec.highest to beat @codemirror/lang-markdown's own Enter
     // handler, which is registered internally by the `markdown()`

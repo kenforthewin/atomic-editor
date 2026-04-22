@@ -16,6 +16,7 @@ import {
   type DecorationSet,
 } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
+import { treeGrowthEffect, treeProgressPlugin } from './tree-progress';
 
 // GFM tables as a WYSIWYG block widget.
 //
@@ -742,6 +743,12 @@ function changeAffectsTables(tr: Transaction, existing: DecorationSet): boolean 
 const tableField = StateField.define<DecorationSet>({
   create: (state) => buildTableWidgets(state),
   update(deco, tr) {
+    // Tree-growth effect: lezer's background parser caught up to a
+    // region that wasn't parsed when we last built. Rebuild so any
+    // newly-visible Table nodes get their widget.
+    for (const effect of tr.effects) {
+      if (effect.is(treeGrowthEffect)) return buildTableWidgets(tr.state);
+    }
     if (!tr.docChanged) return deco;
     const mapped = deco.map(tr.changes);
     if (!changeAffectsTables(tr, deco)) return mapped;
@@ -753,6 +760,7 @@ const tableField = StateField.define<DecorationSet>({
 export function tables(): Extension {
   return [
     tableField,
+    treeProgressPlugin,
     // Prec.high so we run before the default Backspace binding.
     Prec.high(keymap.of([{ key: 'Backspace', run: backspaceAtTableBoundary }])),
   ];

@@ -12,6 +12,7 @@ import {
   WidgetType,
   type DecorationSet,
 } from '@codemirror/view';
+import { treeGrowthEffect, treeProgressPlugin } from './tree-progress';
 
 // Image blocks.
 //
@@ -210,6 +211,12 @@ function changeAffectsImages(tr: Transaction, existing: DecorationSet): boolean 
 const imageBlocksField = StateField.define<DecorationSet>({
   create: (state) => buildImageBlocks(state),
   update(deco, tr) {
+    // Tree-growth effect: the background parser caught up to a
+    // region that wasn't parsed when we last built. Rebuild so any
+    // newly-visible Image nodes get their widget.
+    for (const effect of tr.effects) {
+      if (effect.is(treeGrowthEffect)) return buildImageBlocks(tr.state);
+    }
     // Selection and viewport changes don't affect the widget set
     // (though they do affect whether the surrounding markdown is
     // shown, which is handled by the inline-preview ViewPlugin).
@@ -226,5 +233,5 @@ const imageBlocksField = StateField.define<DecorationSet>({
 });
 
 export function imageBlocks(): Extension {
-  return imageBlocksField;
+  return [imageBlocksField, treeProgressPlugin];
 }
