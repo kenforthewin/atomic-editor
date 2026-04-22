@@ -198,10 +198,42 @@ re-maps the same variables.
 | `--atomic-editor-hl-operator`         | `#89ddff`                                           |
 | `--atomic-editor-hl-invalid`          | `#ff5370`                                           |
 
-## Low-level extensions
+## Extending with plugins
 
-If you want to assemble your own CM6 editor but still use pieces of
-this package, every extension factory is individually exported:
+CodeMirror 6 is extension-based, and so is this package. Pass any
+number of CM6 extensions via the `extensions` prop to layer in
+autocomplete sources, custom decorations, domain-specific keymaps,
+collaboration (yjs), vim mode, or anything else:
+
+```tsx
+import { autocompletion, type CompletionContext } from '@codemirror/autocomplete';
+
+const wikiLinks = autocompletion({
+  override: [(ctx: CompletionContext) => {
+    const match = ctx.matchBefore(/\[\[\w*$/);
+    if (!match) return null;
+    return {
+      from: match.from + 2,
+      options: myAtomStore.list().map((a) => ({ label: a.title })),
+    };
+  }],
+});
+
+<AtomicCodeMirrorEditor
+  markdownSource={'…'}
+  extensions={[wikiLinks]}
+/>
+```
+
+Consumer extensions are appended after the built-ins, so wrap a custom
+keymap in `Prec.high` (from `@codemirror/state`) if it needs to beat
+the default bindings. The array is captured at mount — pass a stable
+reference unless you want a remount.
+
+### Low-level composition
+
+If the React wrapper's extension set is too opinionated, every piece
+is exported individually so you can assemble a fully custom editor:
 
 ```ts
 import {
@@ -213,6 +245,12 @@ import {
   extendEmphasisPair,
 } from '@atomic-editor/editor';
 ```
+
+You could build an editor that includes `inlinePreview()` + `tables()`
+but skips `atomicEditorTheme` for your own `EditorView.theme({...})`,
+or swap `atomicMarkdownSyntax` for a custom
+`syntaxHighlighting(HighlightStyle.define([...]))`. At that point
+you're outside the React wrapper and in plain CM6 territory.
 
 ## Design notes
 

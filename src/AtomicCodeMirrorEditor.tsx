@@ -9,7 +9,7 @@ import {
   rectangularSelection,
   type Panel,
 } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorState, type Extension } from '@codemirror/state';
 import { indentOnInput, type LanguageDescription } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import {
@@ -40,9 +40,10 @@ import { imageBlocks } from './image-blocks';
 import { inlinePreview } from './inline-preview';
 import { tables } from './table-widget';
 
-// Stable reference so a consumer that doesn't pass `codeLanguages`
-// doesn't force-remount the editor on every render.
+// Stable references so consumers that don't pass `codeLanguages` or
+// `extensions` don't force-remount the editor on every render.
 const EMPTY_CODE_LANGUAGES: readonly LanguageDescription[] = [];
+const EMPTY_EXTENSIONS: readonly Extension[] = [];
 
 export interface AtomicCodeMirrorEditorHandle {
   focus: () => void;
@@ -129,6 +130,43 @@ export interface AtomicCodeMirrorEditorProps {
    * exported by `@codemirror/language`.
    */
   codeLanguages?: readonly LanguageDescription[];
+
+  /**
+   * Extra CodeMirror 6 extensions appended to the built-in set.
+   * This is the hook for layering in additional plugins — autocomplete
+   * sources, custom decorations (wiki-links, block refs, footnotes),
+   * domain-specific keymaps, collaboration (yjs), vim mode, etc.
+   *
+   * Order matters for CM6 precedence. Use `Prec.high/default/low` from
+   * `@codemirror/state` to explicitly position an extension relative
+   * to the built-ins when it matters (e.g., custom keybindings that
+   * need to beat the default keymap).
+   *
+   * Extensions are captured once at mount time (keyed on
+   * `documentId ?? markdownSource`). Changing the array reference
+   * without changing the document identity does NOT re-apply — pass
+   * a stable reference (via `useMemo` or a module-level constant)
+   * unless you intend a remount.
+   *
+   * @example
+   * ```ts
+   * import { autocompletion, CompletionContext } from '@codemirror/autocomplete';
+   *
+   * const wikiLinkCompletion = autocompletion({
+   *   override: [(ctx: CompletionContext) => {
+   *     const match = ctx.matchBefore(/\[\[\w*$/);
+   *     if (!match) return null;
+   *     return {
+   *       from: match.from + 2,
+   *       options: atomStore.list().map(a => ({ label: a.title })),
+   *     };
+   *   }],
+   * });
+   *
+   * <AtomicCodeMirrorEditor extensions={[wikiLinkCompletion]} ... />
+   * ```
+   */
+  extensions?: readonly Extension[];
 }
 
 /**
@@ -150,6 +188,7 @@ export function AtomicCodeMirrorEditor({
   onLinkClick,
   editorHandleRef,
   codeLanguages = EMPTY_CODE_LANGUAGES,
+  extensions = EMPTY_EXTENSIONS,
 }: AtomicCodeMirrorEditorProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -229,6 +268,12 @@ export function AtomicCodeMirrorEditor({
             if (!update.docChanged) return;
             onMarkdownChangeRef.current?.(update.state.doc.toString());
           }),
+          // Consumer extensions last so they compose on top of the
+          // built-ins (e.g. a custom keymap wrapped in Prec.high will
+          // beat the default keymap above). Extensions intentionally
+          // trail the change listener so consumer update-listeners
+          // fire after onMarkdownChange.
+          ...extensions,
         ],
       }),
     });
