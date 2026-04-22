@@ -684,6 +684,153 @@ async function probeTableWidget(page) {
   );
 }
 
+async function probeTableCellMarkdown(page) {
+  // The showcase includes a deterministic inline-marks table with
+  // columns: Plain | Bold | Italic | Strike | Link.
+  // Body row: plain text | **bold text** | *italic text* | ~~struck text~~ | [example](https://example.org)
+  //
+  // Each mark should decorate into its matching `.cm-atomic-*` span
+  // inside the cell's source element. On focus, the cell should swap
+  // to plain text (no decoration spans) so typing stays clean; on
+  // blur, decorations re-apply.
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.waitForTimeout(200);
+  for (let step = 0; step < 8; step++) {
+    const present = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-atomic-table')).some((w) =>
+        (w.textContent || '').includes('struck text'),
+      ),
+    );
+    if (present) break;
+    await page.locator('.cm-scroller').evaluate((el) => {
+      el.scrollTop += 200;
+    });
+    await page.waitForTimeout(120);
+  }
+
+  const shape = await page.evaluate(() => {
+    const wrap = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    if (!wrap) return { found: false };
+    const bodyRow = wrap.querySelector('tbody tr');
+    if (!bodyRow) return { found: false };
+    const cells = Array.from(bodyRow.querySelectorAll('td'));
+    // Expect 5 cells (Plain, Bold, Italic, Strike, Link).
+    const get = (cell, sel) => (cell ? cell.querySelector(sel) !== null : false);
+    const boldCell = cells[1];
+    const italicCell = cells[2];
+    const strikeCell = cells[3];
+    const linkCell = cells[4];
+    return {
+      found: true,
+      hasBold: get(boldCell, '.cm-atomic-strong'),
+      boldText: boldCell?.querySelector('.cm-atomic-strong')?.textContent || '',
+      hasItalic: get(italicCell, '.cm-atomic-em'),
+      italicText: italicCell?.querySelector('.cm-atomic-em')?.textContent || '',
+      hasStrike: get(strikeCell, '.cm-atomic-strike'),
+      strikeText: strikeCell?.querySelector('.cm-atomic-strike')?.textContent || '',
+      hasLink: get(linkCell, '.cm-atomic-link'),
+      linkText: linkCell?.querySelector('.cm-atomic-link')?.textContent || '',
+      linkUrl: linkCell?.querySelector('.cm-atomic-link-wrap')?.dataset.url || '',
+      boldCellText: boldCell?.textContent || '',
+    };
+  });
+
+  if (!shape.found) {
+    record('cell markdown: table present', 'fail', 'inline-marks table not rendered');
+    return;
+  }
+  record(
+    'cell markdown: bold decorates',
+    shape.hasBold && shape.boldText === 'bold text' ? 'pass' : 'fail',
+    `hasBold=${shape.hasBold} text=${JSON.stringify(shape.boldText)}`,
+  );
+  record(
+    'cell markdown: italic decorates',
+    shape.hasItalic && shape.italicText === 'italic text' ? 'pass' : 'fail',
+    `hasItalic=${shape.hasItalic} text=${JSON.stringify(shape.italicText)}`,
+  );
+  record(
+    'cell markdown: strike decorates',
+    shape.hasStrike && shape.strikeText === 'struck text' ? 'pass' : 'fail',
+    `hasStrike=${shape.hasStrike} text=${JSON.stringify(shape.strikeText)}`,
+  );
+  record(
+    'cell markdown: link decorates',
+    shape.hasLink &&
+      shape.linkText === 'example' &&
+      shape.linkUrl === 'https://example.org'
+      ? 'pass'
+      : 'fail',
+    `hasLink=${shape.hasLink} text=${JSON.stringify(shape.linkText)} url=${shape.linkUrl}`,
+  );
+  // textContent of the bold cell must equal its raw source so round-
+  // trip is preserved — new inline-mark rendering can't silently
+  // change what the outer source sees on re-serialize.
+  record(
+    'cell markdown: decorated textContent round-trips',
+    shape.boldCellText === '**bold text**' ? 'pass' : 'fail',
+    `cellTextContent=${JSON.stringify(shape.boldCellText)}`,
+  );
+
+  // Focus a decorated cell: decorations should swap to plain text.
+  const swapped = await page.evaluate(() => {
+    const wrap = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    if (!wrap) return null;
+    const boldCell = wrap.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')[1];
+    if (!boldCell) return null;
+    const src = boldCell.querySelector('.cm-atomic-table-cell-source');
+    if (!src) return null;
+    src.focus();
+    // Wait a tick for the focus handler to run.
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          decorated: src.querySelector('.cm-atomic-strong') !== null,
+          text: src.textContent || '',
+        });
+      }, 30);
+    });
+  });
+  if (swapped) {
+    record(
+      'cell markdown: focus swaps to plain text',
+      !swapped.decorated && swapped.text === '**bold text**' ? 'pass' : 'fail',
+      `decoratedStillPresent=${swapped.decorated} text=${JSON.stringify(swapped.text)}`,
+    );
+  } else {
+    record('cell markdown: focus swaps to plain text', 'fail', 'bold cell not found');
+  }
+
+  // Blur the focused cell: decorations should reappear.
+  const reDecorated = await page.evaluate(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+    // Give the blur handler a tick to re-render.
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const wrap = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+          (w) => (w.textContent || '').includes('struck text'),
+        );
+        if (!wrap) return resolve(false);
+        const boldCell = wrap.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')[1];
+        const src = boldCell?.querySelector('.cm-atomic-table-cell-source');
+        resolve(src?.querySelector('.cm-atomic-strong') !== null);
+      }, 30);
+    });
+  });
+  record(
+    'cell markdown: blur re-decorates',
+    reDecorated ? 'pass' : 'fail',
+    `reDecorated=${reDecorated}`,
+  );
+}
+
 async function probeHorizontalRule(page) {
   // The showcase section includes a `---` line. On inactive (cold)
   // state it should be classed as `cm-atomic-hr` so the CSS rule
@@ -1273,6 +1420,7 @@ async function run() {
     await probeCloseBrackets(page);
     await probeHorizontalRule(page);
     await probeTableWidget(page);
+    await probeTableCellMarkdown(page);
     await probeTableFromMarkdown(page);
     await probeImageBlock(page);
     await probeBackslashEscape(page);

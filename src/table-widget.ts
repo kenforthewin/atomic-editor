@@ -1,6 +1,7 @@
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import {
   EditorSelection,
+  Facet,
   Prec,
   StateField,
   type EditorState,
@@ -135,6 +136,286 @@ function stripEscapes(text: string): string {
 
 function getCellSource(cell: HTMLElement): HTMLElement | null {
   return cell.querySelector<HTMLElement>('.cm-atomic-table-cell-source');
+}
+
+// ---- inline-mark parsing for cell source --------------------------------
+
+// Cells render a subset of inline markdown — bold, italic, strikethrough,
+// and links. No code spans (the `|` inside a backtick would silently
+// break row parsing), no lists/blocks (cells are single-line by
+// construction), no images (handled by the separate cell-preview strip).
+//
+// The parser is recursive so `**[text](url)**` nests cleanly, but each
+// mark is a straightforward delimiter pair — no CommonMark flanking
+// rules. The UX inside a cell is forgiving on purpose: if a pair
+// matches, it decorates.
+
+type CellToken =
+  | { type: 'text'; text: string }
+  | { type: 'strong'; delim: '**' | '__'; children: CellToken[] }
+  | { type: 'em'; delim: '*' | '_'; children: CellToken[] }
+  | { type: 'strike'; children: CellToken[] }
+  | { type: 'link'; textChildren: CellToken[]; url: string };
+
+function parseCellInline(raw: string): CellToken[] {
+  const tokens: CellToken[] = [];
+  let textBuf = '';
+  let i = 0;
+
+  const flushText = () => {
+    if (textBuf.length) {
+      tokens.push({ type: 'text', text: textBuf });
+      textBuf = '';
+    }
+  };
+
+  while (i < raw.length) {
+    // CommonMark backslash escape — the following char is emitted
+    // literally and can't open/close a mark. Pair is consumed.
+    if (raw[i] === '\\' && i + 1 < raw.length && /[!-/:-@[-`{-~]/.test(raw[i + 1])) {
+      textBuf += raw[i + 1];
+      i += 2;
+      continue;
+    }
+
+    const match = matchCellMarkAt(raw, i);
+    if (match) {
+      flushText();
+      tokens.push(match.token);
+      i = match.end;
+      continue;
+    }
+
+    textBuf += raw[i];
+    i++;
+  }
+
+  flushText();
+  return tokens;
+}
+
+function matchCellMarkAt(
+  raw: string,
+  from: number,
+): { token: CellToken; end: number } | null {
+  const rest = raw.slice(from);
+
+  // Bold with `**` or `__` — greedy on the outside, lazy on the
+  // content so we catch the nearest closer.
+  let m = rest.match(/^\*\*([\s\S]+?)\*\*/);
+  if (m) {
+    return {
+      token: { type: 'strong', delim: '**', children: parseCellInline(m[1]) },
+      end: from + m[0].length,
+    };
+  }
+  m = rest.match(/^__([\s\S]+?)__/);
+  if (m) {
+    return {
+      token: { type: 'strong', delim: '__', children: parseCellInline(m[1]) },
+      end: from + m[0].length,
+    };
+  }
+
+  // Strikethrough.
+  m = rest.match(/^~~([\s\S]+?)~~/);
+  if (m) {
+    return {
+      token: { type: 'strike', children: parseCellInline(m[1]) },
+      end: from + m[0].length,
+    };
+  }
+
+  // Link `[text](url)`. Reject empty text / url via `+` quantifiers.
+  // `]` and `)` can't appear unescaped inside their respective fields.
+  m = rest.match(/^\[([^\]\n]+)\]\(([^\s)"'\n]+)\)/);
+  if (m) {
+    return {
+      token: {
+        type: 'link',
+        textChildren: parseCellInline(m[1]),
+        url: m[2],
+      },
+      end: from + m[0].length,
+    };
+  }
+
+  // Italic with `*`. Reject a leading `*` (that would have matched
+  // the bold regex above; this guards against pathological inputs
+  // like `***` that slip through).
+  m = rest.match(/^\*([^*\n]+?)\*/);
+  if (m) {
+    return {
+      token: { type: 'em', delim: '*', children: parseCellInline(m[1]) },
+      end: from + m[0].length,
+    };
+  }
+
+  // Italic with `_`. Avoid triggering inside words like `snake_case`
+  // by requiring the char before `_` to not be a word character.
+  // (Fallback to true when `_` is at start-of-input.)
+  const prev = from > 0 ? raw[from - 1] : '';
+  if (!/\w/.test(prev)) {
+    m = rest.match(/^_([^_\n]+?)_/);
+    if (m) {
+      return {
+        token: { type: 'em', delim: '_', children: parseCellInline(m[1]) },
+        end: from + m[0].length,
+      };
+    }
+  }
+
+  return null;
+}
+
+// Build the decorated DOM for a cell's source. The fragment's
+// `textContent` equals `stripEscapes(raw)` — crucial so the cell's
+// input event handler can continue to read `innerText` without caring
+// whether the DOM is decorated or plain.
+function buildCellSourceDom(raw: string): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  const tokens = parseCellInline(raw);
+  for (const tok of tokens) frag.appendChild(renderCellToken(tok));
+  return frag;
+}
+
+function renderCellToken(tok: CellToken): Node {
+  if (tok.type === 'text') {
+    return document.createTextNode(tok.text);
+  }
+
+  if (tok.type === 'strong') {
+    const wrap = document.createElement('span');
+    wrap.className = 'cm-atomic-strong-wrap';
+    wrap.appendChild(makeCellMark(tok.delim));
+    const inner = document.createElement('span');
+    inner.className = 'cm-atomic-strong';
+    inner.appendChild(renderTokensTo(tok.children));
+    wrap.appendChild(inner);
+    wrap.appendChild(makeCellMark(tok.delim));
+    return wrap;
+  }
+
+  if (tok.type === 'em') {
+    const wrap = document.createElement('span');
+    wrap.className = 'cm-atomic-em-wrap';
+    wrap.appendChild(makeCellMark(tok.delim));
+    const inner = document.createElement('span');
+    inner.className = 'cm-atomic-em';
+    inner.appendChild(renderTokensTo(tok.children));
+    wrap.appendChild(inner);
+    wrap.appendChild(makeCellMark(tok.delim));
+    return wrap;
+  }
+
+  if (tok.type === 'strike') {
+    const wrap = document.createElement('span');
+    wrap.className = 'cm-atomic-strike-wrap';
+    wrap.appendChild(makeCellMark('~~'));
+    const inner = document.createElement('span');
+    inner.className = 'cm-atomic-strike';
+    inner.appendChild(renderTokensTo(tok.children));
+    wrap.appendChild(inner);
+    wrap.appendChild(makeCellMark('~~'));
+    return wrap;
+  }
+
+  // Link. Shape mirrors the outer-editor markup: `.cm-atomic-link` on
+  // the visible text (picks up link color + external-link icon via
+  // `::after`), faint marks for `[`, `]`, `(`, URL, `)`. `data-url`
+  // lets the cell-source click handler open the right URL without
+  // re-parsing.
+  const wrap = document.createElement('span');
+  wrap.className = 'cm-atomic-link-wrap';
+  wrap.dataset.url = tok.url;
+  wrap.appendChild(makeCellMark('['));
+  const inner = document.createElement('span');
+  inner.className = 'cm-atomic-link';
+  inner.appendChild(renderTokensTo(tok.textChildren));
+  wrap.appendChild(inner);
+  wrap.appendChild(makeCellMark(']'));
+  wrap.appendChild(makeCellMark('('));
+  const urlMark = makeCellMark(tok.url);
+  urlMark.classList.add('cm-atomic-link-url');
+  wrap.appendChild(urlMark);
+  wrap.appendChild(makeCellMark(')'));
+  return wrap;
+}
+
+function renderTokensTo(tokens: CellToken[]): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  for (const tok of tokens) frag.appendChild(renderCellToken(tok));
+  return frag;
+}
+
+function makeCellMark(text: string): HTMLElement {
+  const el = document.createElement('span');
+  el.className = 'cm-atomic-mark';
+  el.textContent = text;
+  return el;
+}
+
+// Render a cell source element in its decorated (unfocused) form.
+// Safe to call multiple times — overwrites whatever was there.
+function renderCellSourceDecorated(source: HTMLElement): void {
+  const raw = source.parentElement?.dataset.raw ?? '';
+  source.replaceChildren(buildCellSourceDom(raw));
+}
+
+// Render a cell source element in plain-text (focused/editing) form.
+function renderCellSourcePlain(source: HTMLElement): void {
+  const raw = source.parentElement?.dataset.raw ?? '';
+  source.textContent = stripEscapes(raw);
+}
+
+// Caret utilities for the focus/blur DOM swap. Both encode positions
+// as character offsets within the element's textContent so the
+// decorated-vs-plain DOM shapes are interchangeable — an offset
+// measured in one shape lands on the same visible character in the
+// other.
+
+function getCaretCharOffset(container: HTMLElement): number | null {
+  const selection = container.ownerDocument?.defaultView?.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (!container.contains(range.startContainer)) return null;
+  const pre = range.cloneRange();
+  pre.selectNodeContents(container);
+  pre.setEnd(range.startContainer, range.startOffset);
+  return pre.toString().length;
+}
+
+function setCaretCharOffset(container: HTMLElement, offset: number): void {
+  const doc = container.ownerDocument;
+  if (!doc) return;
+  const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let remaining = offset;
+  let target: Text | null = null;
+  let targetOffset = 0;
+  let node = walker.nextNode() as Text | null;
+  while (node) {
+    const len = node.data.length;
+    if (remaining <= len) {
+      target = node;
+      targetOffset = remaining;
+      break;
+    }
+    remaining -= len;
+    node = walker.nextNode() as Text | null;
+  }
+  const selection = doc.defaultView?.getSelection();
+  if (!selection) return;
+  const range = doc.createRange();
+  if (target) {
+    range.setStart(target, targetOffset);
+  } else {
+    // Offset past the end — place caret at the container's end.
+    range.selectNodeContents(container);
+    range.collapse(false);
+  }
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 interface CellImage {
@@ -322,8 +603,12 @@ function makeCell(
   source.className = 'cm-atomic-table-cell-source';
   source.contentEditable = 'true';
   source.spellcheck = true;
-  source.textContent = stripEscapes(text);
+  // Decorated (unfocused) DOM on mount. The textContent of the
+  // decorated tree equals `stripEscapes(raw)`, so `source.innerText`
+  // read on `input` returns the same string regardless of whether
+  // the cell is currently focused (plain) or unfocused (decorated).
   cell.appendChild(source);
+  renderCellSourceDecorated(source);
 
   source.addEventListener('input', () => {
     // innerText mirrors what the user sees; collapse any stray
@@ -331,6 +616,26 @@ function makeCell(
     cell.dataset.raw = source.innerText.replace(/\s+/g, ' ').trim();
     refreshCellPreview(cell);
     dispatchModelFromDom(view, cell);
+  });
+
+  // Focus / blur: swap between decorated and plain DOM. Decorated
+  // while idle so the reader sees bold / italic / strike / links
+  // rendered; plain while editing so the browser's contenteditable
+  // isn't inserting the user's typing into styled descendant spans.
+  source.addEventListener('focus', () => {
+    // Measure the browser-placed caret BEFORE rewriting the DOM.
+    // Offset is measured against the decorated DOM's textContent;
+    // the plain DOM has the same textContent, so the same offset
+    // lands on the same visible character.
+    const offset = getCaretCharOffset(source);
+    renderCellSourcePlain(source);
+    if (offset != null) setCaretCharOffset(source, offset);
+  });
+
+  source.addEventListener('blur', () => {
+    // Re-decorate from the current raw. No caret to preserve — the
+    // cell just lost focus.
+    renderCellSourceDecorated(source);
   });
 
   source.addEventListener('keydown', (event) => {
@@ -345,6 +650,44 @@ function makeCell(
     event.preventDefault();
     event.stopPropagation();
     openCellMenu(view, cell, event.clientX, event.clientY);
+  });
+
+  // Link-icon click: in the unfocused (decorated) state, a click
+  // inside a `.cm-atomic-link` span's trailing external-link icon
+  // zone should open the URL instead of placing the caret. Matches
+  // the outer-editor click handler's icon-zone convention so users
+  // get a consistent affordance inside and outside tables.
+  //
+  // `pointerdown` (not click) so we can `preventDefault` to block
+  // focus + caret placement before the browser reacts.
+  source.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const linkWrap = target.closest<HTMLElement>('.cm-atomic-link-wrap');
+    if (!linkWrap) return;
+    const linkEl = linkWrap.querySelector<HTMLElement>('.cm-atomic-link');
+    if (!linkEl) return;
+
+    const rects = Array.from(linkEl.getClientRects());
+    if (rects.length === 0) return;
+    const lastRect = rects[rects.length - 1];
+    const emSize = parseFloat(window.getComputedStyle(linkEl).fontSize);
+    const iconZone = emSize * 1.25;
+    const onIcon =
+      event.clientX >= lastRect.right - iconZone &&
+      event.clientX <= lastRect.right &&
+      event.clientY >= lastRect.top &&
+      event.clientY <= lastRect.bottom;
+    if (!onIcon) return;
+
+    const url = linkWrap.dataset.url;
+    if (!url) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    view.state.facet(tableLinkClickFacet)(url);
   });
 
   // When the cell has an image and the source is visually hidden,
@@ -757,10 +1100,38 @@ const tableField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-export function tables(): Extension {
+export interface TablesConfig {
+  /**
+   * Called when the user clicks the external-link icon on a link
+   * rendered inside a table cell. Defaults to `window.open(url,
+   * '_blank', 'noopener,noreferrer')`.
+   */
+  onLinkClick?: (url: string) => void;
+}
+
+const defaultLinkOpener = (url: string): void => {
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } catch {
+    // window.open can throw in sandboxed iframes etc.
+  }
+};
+
+// Per-view facet so `makeCell`'s pointerdown handler can look up the
+// current link-click callback. Avoids threading the config through the
+// widget constructor and toDOM args.
+export const tableLinkClickFacet = Facet.define<
+  (url: string) => void,
+  (url: string) => void
+>({
+  combine: (values) => values[0] ?? defaultLinkOpener,
+});
+
+export function tables(config: TablesConfig = {}): Extension {
   return [
     tableField,
     treeProgressPlugin,
+    ...(config.onLinkClick ? [tableLinkClickFacet.of(config.onLinkClick)] : []),
     // Prec.high so we run before the default Backspace binding.
     Prec.high(keymap.of([{ key: 'Backspace', run: backspaceAtTableBoundary }])),
   ];

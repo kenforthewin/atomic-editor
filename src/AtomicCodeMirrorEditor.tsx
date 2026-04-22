@@ -259,7 +259,9 @@ export function AtomicCodeMirrorEditor({
             indentWithTab,
             ...defaultKeymap,
           ]),
-          tables(),
+          tables({
+            onLinkClick: (url) => onLinkClickRef.current?.(url),
+          }),
           imageBlocks(),
           inlinePreview({
             onLinkClick: (url) => onLinkClickRef.current?.(url),

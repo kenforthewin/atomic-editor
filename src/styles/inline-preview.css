@@ -361,6 +361,27 @@
   word-break: break-word;
 }
 
+/* Inline-mark delimiters (`**`, `__`, `*`, `_`, `~~`, `[`, `]`, `(`, `)`,
+ * URLs) inside table cells. The decorated cell's textContent must equal
+ * the raw source so the contenteditable round-trip still works — we
+ * can't `display: none` the delimiters. Instead we deemphasize them
+ * so the visible content reads cleanly: faint color, plus size-
+ * shrink + letter-spacing-squash so the delimiter doesn't reserve
+ * prominent visual space. */
+.cm-atomic-table-cell-source .cm-atomic-mark {
+  color: var(--atomic-editor-fg-faint, #666);
+  font-weight: normal;
+  font-style: normal;
+  text-decoration: none;
+}
+
+/* Link URL specifically: monospace hint that this is a URL, plus a
+ * size cut so long URLs don't dominate the cell width. */
+.cm-atomic-table-cell-source .cm-atomic-link-url {
+  font-family: var(--atomic-editor-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.88em;
+}
+
 /* Rendered image preview strip below the source text. Mirrors how
  * block-level images render outside a table: the `![alt](url)`
  * markdown is the source of truth, but the user sees the image in

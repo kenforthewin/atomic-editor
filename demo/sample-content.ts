@@ -322,7 +322,19 @@ export function generateSampleMarkdown(
   // front-and-center when separators are on, leave it out otherwise.
   if (includeSeparators) sections.push('---');
   if (includeLists) sections.push(list(rng), taskList(rng));
-  if (includeTables) sections.push(table(rng, imageless));
+  if (includeTables) {
+    // Deterministic inline-marks table so probes can target a known
+    // bold / italic / strike / link cell. Each column exercises one
+    // mark type; the plain column is the baseline.
+    sections.push(
+      [
+        '| Plain | Bold | Italic | Strike | Link |',
+        '|---|---|---|---|---|',
+        '| plain text | **bold text** | *italic text* | ~~struck text~~ | [example](https://example.org) |',
+      ].join('\n'),
+      table(rng, imageless),
+    );
+  }
   if (!imageless) {
     // Seeded picsum image — deterministic (same seed → same image
     // bytes) so the image-block widget, screenshots, and scroll
