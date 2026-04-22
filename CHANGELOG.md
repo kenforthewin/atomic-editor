@@ -7,9 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
-## [0.1.0] — Unreleased
+## [0.1.1]
 
-### Initial release
+### Fixed
+
+- **Click routing after block widgets.** Clicks on lines below a table
+  would route the caret to the line below the one visually targeted —
+  most visible as "clicking the blank line above a heading placed the
+  caret on the heading". Root cause: `.cm-atomic-table` used vertical
+  `margin` for rhythm, which `getBoundingClientRect` (CM6's widget
+  measurement) excludes but DOM layout reserves. The heightmap ran
+  ~17 px short of reality for every line below the table. Changed to
+  `padding`, which CM6 measures correctly.
+
+### Other
+
+- Shrink heading `padding-top` so the visually-empty strip above a
+  heading is ~3 px instead of ~14 px — reduces the separate class of
+  "clicked above the heading, landed on it" UX cases.
+- Demo homepage now leads with the hero trio (code block, table, task
+  list) and uses "Atomic Editor" as the display name in the header and
+  tab title.
+
+## [0.1.0] — Initial release
 
 Extracted from [Atomic](https://github.com/kenforthewin/atomic) as a
 standalone package.
