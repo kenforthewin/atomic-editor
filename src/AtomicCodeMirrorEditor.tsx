@@ -10,11 +10,7 @@ import {
   type Panel,
 } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
-import {
-  defaultHighlightStyle,
-  indentOnInput,
-  syntaxHighlighting,
-} from '@codemirror/language';
+import { indentOnInput } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import {
   defaultKeymap,
@@ -164,7 +160,6 @@ export function AtomicCodeMirrorEditor({
           dropCursor(),
           EditorState.allowMultipleSelections.of(true),
           indentOnInput(),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           rectangularSelection(),
           highlightActiveLine(),
           // Obsidian-style bracket pairing.

@@ -116,11 +116,13 @@ export const atomicEditorTheme: Extension = EditorView.theme(
   { dark: true },
 );
 
-// Markdown syntax tinting. Intentionally muted for the punctuation tokens
-// (#, *, `, [, ]) so the surrounding prose reads cleanly; the headings
-// and structural tokens get real visual weight. Most of these tokens are
-// hidden on inactive lines by the inline-preview extension — coloring
-// them matters mainly for the editing view.
+// Markdown syntax tinting plus highlight colors for tokens emitted by
+// grammars nested inside fenced code blocks (see `code-languages.ts`).
+// Punctuation tokens (#, *, `, [, ]) stay muted so the surrounding
+// prose reads cleanly; headings and structural markdown tokens get
+// real visual weight. Code-language tokens (keyword, string, number,
+// etc.) adopt a Material Palenight palette tuned for dark backgrounds;
+// override any color via the `--atomic-editor-hl-*` CSS variables.
 export const atomicMarkdownHighlight = HighlightStyle.define([
   { tag: t.heading1, fontWeight: '700' },
   { tag: t.heading2, fontWeight: '700' },
@@ -147,8 +149,52 @@ export const atomicMarkdownHighlight = HighlightStyle.define([
   { tag: t.list, color: 'var(--atomic-editor-fg, #dcddde)' },
   { tag: t.meta, color: 'var(--atomic-editor-fg-faint, #666)' },
 
-  { tag: t.punctuation, color: 'var(--atomic-editor-fg-faint, #666)' },
-  { tag: t.operator, color: 'var(--atomic-editor-fg-faint, #666)' },
+  // Nested code-language tokens. `@codemirror/lang-markdown` wires the
+  // grammars from `code-languages.ts` into fenced blocks whose info
+  // string matches — each fence gets a real AST, so tags below apply.
+  {
+    tag: [t.keyword, t.modifier, t.operatorKeyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.self],
+    color: 'var(--atomic-editor-hl-keyword, #c792ea)',
+  },
+  {
+    tag: [t.string, t.special(t.string), t.character, t.attributeValue],
+    color: 'var(--atomic-editor-hl-string, #c3e88d)',
+  },
+  {
+    tag: [t.number, t.integer, t.float, t.bool, t.null, t.atom],
+    color: 'var(--atomic-editor-hl-number, #f78c6c)',
+  },
+  {
+    tag: [t.comment, t.lineComment, t.blockComment, t.docComment],
+    color: 'var(--atomic-editor-hl-comment, #6a7a82)',
+    fontStyle: 'italic',
+  },
+  {
+    tag: [t.typeName, t.className, t.namespace, t.standard(t.variableName)],
+    color: 'var(--atomic-editor-hl-type, #ffcb6b)',
+  },
+  {
+    tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName],
+    color: 'var(--atomic-editor-hl-function, #82aaff)',
+  },
+  {
+    tag: [t.propertyName, t.attributeName, t.definition(t.propertyName)],
+    color: 'var(--atomic-editor-hl-property, #82aaff)',
+  },
+  { tag: t.regexp, color: 'var(--atomic-editor-hl-regexp, #f07178)' },
+  { tag: t.escape, color: 'var(--atomic-editor-hl-escape, #89ddff)' },
+  {
+    tag: [t.tagName, t.angleBracket],
+    color: 'var(--atomic-editor-hl-tag, #f07178)',
+  },
+  {
+    tag: [t.variableName, t.labelName, t.definition(t.variableName), t.local(t.variableName)],
+    color: 'var(--atomic-editor-hl-variable, #eeffff)',
+  },
+  { tag: t.operator, color: 'var(--atomic-editor-hl-operator, #89ddff)' },
+  { tag: t.invalid, color: 'var(--atomic-editor-hl-invalid, #ff5370)' },
+
+  { tag: [t.punctuation, t.bracket, t.squareBracket, t.paren, t.brace], color: 'var(--atomic-editor-fg-muted, #888)' },
 ]);
 
 export const atomicMarkdownSyntax = syntaxHighlighting(atomicMarkdownHighlight);
