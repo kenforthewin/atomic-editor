@@ -96,9 +96,23 @@ const freezeMousePlugin = ViewPlugin.fromClass(
         window.clearTimeout(this.releaseTimer);
         this.releaseTimer = null;
       }
-      if (!this.view.state.field(previewFrozenField)) {
-        this.view.dispatch({ effects: setFrozen.of(true) });
-      }
+      // ── DIAGNOSTIC: capture-phase dispatch temporarily disabled ──
+      // Testing whether this synchronous `view.dispatch` inside the
+      // capture-phase pointerdown handler is interfering with CM6's
+      // subsequent mousedown → selection-change pipeline. If clicks
+      // that previously went nowhere now place the caret correctly,
+      // we've confirmed the dispatch is the culprit and will
+      // restructure the freeze mechanic to use a plain instance
+      // flag instead of a state-field effect.
+      //
+      // Known UX regression while this is disabled: clicking a
+      // heading briefly reveals `##` under the cursor (the reveal-
+      // during-click issue the freeze was designed to prevent).
+      // That's expected and acceptable for the diagnostic.
+      //
+      // if (!this.view.state.field(previewFrozenField)) {
+      //   this.view.dispatch({ effects: setFrozen.of(true) });
+      // }
     };
     private readonly onUp = () => {
       if (!this.down) return;
