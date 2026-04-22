@@ -32,8 +32,6 @@ import {
   findPrevious,
   getSearchQuery,
   openSearchPanel,
-  replaceAll,
-  replaceNext,
   search,
   searchKeymap,
   searchPanelOpen,
@@ -288,14 +286,22 @@ export function AtomicCodeMirrorEditor({
 }
 
 // ---------------------------------------------------------------------
-// Default search panel builder
+// Search panel
 //
-// CM6's `search` extension doesn't export its internal default panel
-// factory, so we build a minimal equivalent that owns the same inputs
-// (search text, replace text, case / regex / word toggles) and wires
-// them up via the same commands the keymap uses. Building our own
-// panel also gives us a hook point to add app-specific classes
-// without fighting CM6's defaults.
+// Intentionally minimal: an input, previous / next / close icon
+// buttons, and a live match counter. No replace, no case / regex /
+// word toggles — reader-first, not editor-first. Keyboard users get
+// the same behavior CM6's `searchKeymap` ships with
+// (Cmd/Ctrl+G = next, Shift+same = previous, Escape = close).
+//
+// CM6 doesn't expose a ready-made "minimal" panel, and it doesn't
+// expose its default either, so we build our own. Owning the DOM
+// also means we can style it to match the rest of the app without
+// fighting base CM6 styles.
+
+const SEARCH_ICON_PREV = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
+const SEARCH_ICON_NEXT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+const SEARCH_ICON_CLOSE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 
 function defaultSearchPanel(view: EditorView): Panel {
   const dom = document.createElement('div');
@@ -304,57 +310,87 @@ function defaultSearchPanel(view: EditorView): Panel {
 
   const form = document.createElement('form');
   form.autocomplete = 'off';
-  form.addEventListener('submit', (event) => event.preventDefault());
+  // Submit (Enter) on the input advances to the next match — matches
+  // the muscle memory of browser find-on-page.
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    findNext(view);
+  });
 
-  const currentQuery = getSearchQuery(view.state);
+  const initial = getSearchQuery(view.state);
 
-  const searchInput = makeInput('Find', currentQuery.search);
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = 'Search';
+  searchInput.value = initial.search;
+  searchInput.className = 'cm-atomic-search-input';
   searchInput.setAttribute('main-field', 'true');
-  const replaceInput = makeInput('Replace', currentQuery.replace);
+  searchInput.setAttribute('aria-label', 'Search');
 
-  const caseToggle = makeCheckbox('Match case', currentQuery.caseSensitive);
-  const regexToggle = makeCheckbox('Regex', currentQuery.regexp);
-  const wordToggle = makeCheckbox('By word', currentQuery.wholeWord);
+  const count = document.createElement('span');
+  count.className = 'cm-atomic-search-count';
+  count.setAttribute('aria-live', 'polite');
+
+  const prevBtn = makeIconButton(
+    SEARCH_ICON_PREV,
+    'Previous match',
+    () => findPrevious(view),
+  );
+  const nextBtn = makeIconButton(
+    SEARCH_ICON_NEXT,
+    'Next match',
+    () => findNext(view),
+  );
+  const closeBtn = makeIconButton(
+    SEARCH_ICON_CLOSE,
+    'Close',
+    () => closeSearchPanel(view),
+  );
+
+  // Count the matches in the document for the current query. Walks
+  // the doc via SearchQuery's cursor (sparse — not every character
+  // is visited), so cost is O(matches) rather than O(doc). Atoms
+  // are short enough that even a naïve walk would be fine; the
+  // cursor form is what CM6 itself uses.
+  const recomputeCount = (query: SearchQuery) => {
+    if (!query.search) {
+      count.textContent = '';
+      return;
+    }
+    try {
+      if (!query.valid) {
+        count.textContent = '';
+        return;
+      }
+      let n = 0;
+      const cursor = query.getCursor(view.state.doc);
+      while (!cursor.next().done) {
+        n++;
+        if (n > 9999) break; // sanity cap for pathological regexes
+      }
+      count.textContent = n === 0 ? 'No matches' : n === 1 ? '1 match' : `${n} matches`;
+    } catch {
+      // Regex compile failure — leave the counter blank; user will
+      // see the input lacks its "valid" state via the container class.
+      count.textContent = '';
+    }
+  };
 
   const dispatchQuery = () => {
     const query = new SearchQuery({
       search: searchInput.value,
-      replace: replaceInput.value,
-      caseSensitive: caseToggle.input.checked,
-      regexp: regexToggle.input.checked,
-      wholeWord: wordToggle.input.checked,
+      caseSensitive: initial.caseSensitive,
+      regexp: initial.regexp,
+      wholeWord: initial.wholeWord,
     });
     view.dispatch({ effects: setSearchQuery.of(query) });
+    recomputeCount(query);
   };
 
-  for (const el of [searchInput, replaceInput]) {
-    el.addEventListener('input', dispatchQuery);
-  }
-  for (const tog of [caseToggle, regexToggle, wordToggle]) {
-    tog.input.addEventListener('change', dispatchQuery);
-  }
+  searchInput.addEventListener('input', dispatchQuery);
+  recomputeCount(initial);
 
-  const nextBtn = makeButton('Next', () => findNext(view));
-  const prevBtn = makeButton('Previous', () => findPrevious(view));
-  const replaceBtn = makeButton('Replace', () => replaceNext(view));
-  const replaceAllBtn = makeButton('Replace all', () => replaceAll(view));
-  const closeBtn = makeButton('×', () => closeSearchPanel(view));
-  closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.classList.add('cm-atomic-search-close');
-
-  const topRow = document.createElement('div');
-  topRow.className = 'cm-atomic-search-row';
-  topRow.append(searchInput, prevBtn, nextBtn, closeBtn);
-
-  const replaceRow = document.createElement('div');
-  replaceRow.className = 'cm-atomic-search-row';
-  replaceRow.append(replaceInput, replaceBtn, replaceAllBtn);
-
-  const togglesRow = document.createElement('div');
-  togglesRow.className = 'cm-atomic-search-toggles';
-  togglesRow.append(caseToggle.label, regexToggle.label, wordToggle.label);
-
-  form.append(topRow, replaceRow, togglesRow);
+  form.append(searchInput, count, prevBtn, nextBtn, closeBtn);
   dom.append(form);
 
   return {
@@ -364,36 +400,38 @@ function defaultSearchPanel(view: EditorView): Panel {
       searchInput.focus();
       searchInput.select();
     },
+    update: (update) => {
+      const next = getSearchQuery(update.state);
+      const prev = getSearchQuery(update.startState);
+      // Sync the visible input if the query changed from outside
+      // the panel — e.g. `openSearch("foo")` dispatched while the
+      // panel was already open. Without this, the input shows the
+      // old term while Next / Previous operate on the new query.
+      // Guard on value inequality so we don't fight a user mid-edit
+      // (programmatic .value assignment keeps the caret at the end).
+      if (next.search !== prev.search && searchInput.value !== next.search) {
+        searchInput.value = next.search;
+      }
+      // Recount on any query change or doc edit so "N matches"
+      // stays live.
+      if (update.docChanged || next.search !== prev.search) {
+        recomputeCount(next);
+      }
+    },
   };
 }
 
-function makeInput(placeholder: string, value: string): HTMLInputElement {
-  const el = document.createElement('input');
-  el.type = 'text';
-  el.placeholder = placeholder;
-  el.value = value;
-  el.className = 'cm-atomic-search-input';
-  return el;
-}
-
-function makeCheckbox(
+function makeIconButton(
+  svg: string,
   label: string,
-  checked: boolean,
-): { label: HTMLLabelElement; input: HTMLInputElement } {
-  const wrap = document.createElement('label');
-  wrap.className = 'cm-atomic-search-toggle';
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.checked = checked;
-  wrap.append(input, document.createTextNode(label));
-  return { label: wrap, input };
-}
-
-function makeButton(label: string, onClick: () => void): HTMLButtonElement {
+  onClick: () => void,
+): HTMLButtonElement {
   const el = document.createElement('button');
   el.type = 'button';
-  el.textContent = label;
   el.className = 'cm-atomic-search-btn';
+  el.innerHTML = svg;
+  el.setAttribute('aria-label', label);
+  el.title = label;
   el.addEventListener('click', onClick);
   return el;
 }

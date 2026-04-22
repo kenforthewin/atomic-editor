@@ -476,7 +476,138 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
     },
   });
 
+  // Supplemental inline marks for the line containing the cursor.
+  // CommonMark's flanking rules say that `**foo **` is not emphasis
+  // because the closing `**` is preceded by whitespace — lezer
+  // agrees and doesn't emit `StrongEmphasis`, so the walk above
+  // misses it. Result: while the user types a sentence inside
+  // `**...**`, the bold styling flicks on and off every time they
+  // hit the spacebar. We patch the UX by scanning the active line
+  // for matched delimiter pairs the cursor sits between and
+  // emitting the mark ourselves regardless of flanking. Once the
+  // cursor leaves, lezer's opinion wins and the visual reverts to
+  // what will actually persist when the line is serialized.
+  if (view.hasFocus) {
+    const head = state.selection.main.head;
+    const line = doc.lineAt(head);
+    if (activeLines.has(line.number)) {
+      supplementMidTypingEmphasis(
+        line.text,
+        line.from,
+        head - line.from,
+        ranges,
+      );
+    }
+  }
+
   return Decoration.set(ranges, true);
+}
+
+// Delimiters we emit supplemental marks for, longest first so `**`
+// is matched before `*` and `__` before `_`. Backticks don't need
+// this treatment — CommonMark inline code isn't subject to
+// flanking rules. Each entry carries both the content class (what
+// lezer would style via `t.strong` / `t.emphasis` / `t.strikethrough`)
+// and the delimiter class (matches how the EmphasisMark token
+// renders when lezer *does* parse: parent tag's weight / style /
+// decoration plus `processingInstruction`'s faint color).
+const MID_TYPING_DELIMITERS: readonly {
+  delim: string;
+  contentCls: string;
+  delimCls: string;
+}[] = [
+  { delim: '**', contentCls: 'cm-atomic-strong', delimCls: 'cm-atomic-strong-mark' },
+  { delim: '__', contentCls: 'cm-atomic-strong', delimCls: 'cm-atomic-strong-mark' },
+  { delim: '~~', contentCls: 'cm-atomic-strike', delimCls: 'cm-atomic-strike-mark' },
+  { delim: '*', contentCls: 'cm-atomic-em', delimCls: 'cm-atomic-em-mark' },
+  { delim: '_', contentCls: 'cm-atomic-em', delimCls: 'cm-atomic-em-mark' },
+];
+
+function supplementMidTypingEmphasis(
+  text: string,
+  lineFrom: number,
+  localCursor: number,
+  out: Range<Decoration>[],
+): void {
+  // Track which characters of the line are already "owned" by a
+  // matched delimiter pair so a single-char delimiter doesn't
+  // accidentally pair halves of two different double-delimiter
+  // spans.
+  const consumed = new Uint8Array(text.length);
+
+  for (const { delim, contentCls, delimCls } of MID_TYPING_DELIMITERS) {
+    const dLen = delim.length;
+    let searchFrom = 0;
+    while (searchFrom < text.length) {
+      const open = indexOfUnconsumed(text, delim, searchFrom, consumed);
+      if (open < 0) break;
+      const close = indexOfUnconsumed(text, delim, open + dLen, consumed);
+      if (close < 0) break;
+
+      for (let i = open; i < close + dLen; i++) consumed[i] = 1;
+
+      const contentFrom = open + dLen;
+      const contentTo = close;
+      if (
+        contentFrom < contentTo &&
+        localCursor > open &&
+        localCursor < close + dLen
+      ) {
+        out.push(
+          Decoration.mark({ class: contentCls }).range(
+            lineFrom + contentFrom,
+            lineFrom + contentTo,
+          ),
+        );
+        // Style the delimiter characters to match how lezer's
+        // `EmphasisMark` tokens render when the pattern parses
+        // cleanly. Lezer tags `EmphasisMark` with both its parent
+        // (`strong` / `emphasis` / `strikethrough`) and
+        // `processingInstruction`, so the `**` characters get
+        // faint color AND the parent's weight / style / decoration
+        // — we mirror all of that here so the delimiters don't
+        // flip style / size / color when the cursor moves or a
+        // trailing space triggers / untriggers lezer's parse.
+        out.push(
+          Decoration.mark({ class: delimCls }).range(
+            lineFrom + open,
+            lineFrom + contentFrom,
+          ),
+        );
+        out.push(
+          Decoration.mark({ class: delimCls }).range(
+            lineFrom + contentTo,
+            lineFrom + close + dLen,
+          ),
+        );
+      }
+
+      searchFrom = close + dLen;
+    }
+  }
+}
+
+function indexOfUnconsumed(
+  text: string,
+  needle: string,
+  from: number,
+  consumed: Uint8Array,
+): number {
+  let i = from;
+  while (i <= text.length - needle.length) {
+    const found = text.indexOf(needle, i);
+    if (found < 0) return -1;
+    let isConsumed = false;
+    for (let k = found; k < found + needle.length; k++) {
+      if (consumed[k]) {
+        isConsumed = true;
+        break;
+      }
+    }
+    if (!isConsumed) return found;
+    i = found + 1;
+  }
+  return -1;
 }
 
 const inlinePreviewPlugin = ViewPlugin.fromClass(

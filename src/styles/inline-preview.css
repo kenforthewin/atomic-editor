@@ -132,6 +132,30 @@
   color: var(--atomic-editor-fg-muted, #888);
 }
 
+/* Delimiter characters for emphasis marks we supplemented manually
+ * (see `supplementMidTypingEmphasis` in inline-preview.ts). Each
+ * class mirrors what an `EmphasisMark` token would pick up through
+ * syntax highlighting when lezer does parse the pattern: faint
+ * color from `processingInstruction`, plus the parent scope's
+ * weight / style / decoration so the delimiter glyph keeps the
+ * same metrics whether lezer recognized the emphasis or not.
+ * Without the matching weight / style, `**` would visibly change
+ * width as the user types through a trailing space. */
+.cm-atomic-strong-mark {
+  color: var(--atomic-editor-fg-faint, #666);
+  font-weight: 700;
+}
+
+.cm-atomic-em-mark {
+  color: var(--atomic-editor-fg-faint, #666);
+  font-style: italic;
+}
+
+.cm-atomic-strike-mark {
+  color: var(--atomic-editor-fg-faint, #666);
+  text-decoration: line-through;
+}
+
 .cm-atomic-link {
   color: var(--atomic-editor-link, #60a5fa);
   text-decoration: underline;
@@ -405,90 +429,89 @@
   background: var(--atomic-editor-border, #3d3d3d);
 }
 
-/* Find-in-document panel — rendered at the top of the editor by the
- * `search()` extension. We build our own panel DOM in the editor
- * component (defaultSearchPanel) so we can expose the
- * .atomic-editor-search-panel class and control the layout; the
- * styles below theme that structure to match the rest of the app. */
+/* Find-in-document panel — single compact row of input + match
+ * counter + prev / next / close icon buttons. Rendered at the top
+ * of the editor by the `search()` extension; DOM built in the
+ * editor component (`defaultSearchPanel`). Styled to match the
+ * rest of the app's control surface: card-toned background,
+ * rounded inputs with an accent focus ring, muted-secondary for
+ * secondary text. */
 .atomic-editor-search-panel {
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.6rem;
   background: var(--atomic-editor-bg-panel, #252525);
   border-bottom: 1px solid var(--atomic-editor-border, #3d3d3d);
   font-family: var(--atomic-editor-font, system-ui, sans-serif);
-  font-size: 0.82rem;
   color: var(--atomic-editor-fg, #dcddde);
 }
 
 .atomic-editor-search-panel form {
   display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.cm-atomic-search-row {
-  display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
 }
 
 .cm-atomic-search-input {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 0.3rem 0.5rem;
-  background: var(--atomic-editor-bg, #1e1e1e);
+  padding: 0.4rem 0.65rem;
+  background: var(--atomic-editor-bg-surface, #2d2d2d);
   border: 1px solid var(--atomic-editor-border, #3d3d3d);
-  border-radius: 4px;
+  border-radius: 6px;
   color: inherit;
   font: inherit;
+  font-size: 0.875rem;
   outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .cm-atomic-search-input:focus {
-  border-color: var(--atomic-editor-accent, #7c3aed);
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--atomic-editor-accent, #7c3aed);
 }
 
-.cm-atomic-search-btn {
-  padding: 0.3rem 0.6rem;
-  background: var(--atomic-editor-bg-surface, #2d2d2d);
-  border: 1px solid var(--atomic-editor-border, #3d3d3d);
-  border-radius: 4px;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.cm-atomic-search-btn:hover {
-  border-color: var(--atomic-editor-accent, #7c3aed);
-  color: var(--atomic-editor-accent-bright, #a78bfa);
-}
-
-.cm-atomic-search-close {
-  /* Tighter hit area for the close glyph — matches a typical "×"
-   * affordance without stretching the row. */
-  padding: 0.2rem 0.55rem;
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.cm-atomic-search-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+.cm-atomic-search-input::placeholder {
   color: var(--atomic-editor-fg-muted, #888);
-  font-size: 0.78rem;
 }
 
-.cm-atomic-search-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  cursor: pointer;
+.cm-atomic-search-count {
+  flex: 0 0 auto;
+  color: var(--atomic-editor-fg-muted, #888);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  min-width: 0;
   user-select: none;
 }
 
-.cm-atomic-search-toggle input[type='checkbox'] {
-  accent-color: var(--atomic-editor-accent, #7c3aed);
+.cm-atomic-search-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--atomic-editor-fg-muted, #888);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.cm-atomic-search-btn:hover {
+  background: var(--atomic-editor-bg-surface, #2d2d2d);
+  color: var(--atomic-editor-fg, #dcddde);
+}
+
+.cm-atomic-search-btn:focus-visible {
+  outline: none;
+  border-color: var(--atomic-editor-accent, #7c3aed);
+  color: var(--atomic-editor-fg, #dcddde);
+}
+
+.cm-atomic-search-btn svg {
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 /* Highlight matches in the document. Active match gets a stronger

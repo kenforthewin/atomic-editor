@@ -4,6 +4,7 @@ import {
   type EditorState,
   type Extension,
   type Range,
+  type Transaction,
 } from '@codemirror/state';
 import {
   Decoration,
@@ -166,16 +167,60 @@ function buildImageBlocks(state: EditorState): DecorationSet {
   return Decoration.set(ranges, true);
 }
 
+// Detect whether a doc change could have added, removed, or modified
+// an Image node. Two cheap signals:
+//
+//   1. Any existing image decoration overlaps the changed range. That
+//      covers edits to (or deletions of) an image already in the doc.
+//   2. Any line touched by the change now contains the `![` marker.
+//      That catches new images being typed AND edits that complete a
+//      partially-typed image on an existing line.
+//
+// If neither signal fires, the change can't affect image widgets and
+// we can skip `buildImageBlocks` entirely — `deco.map(tr.changes)`
+// shifts existing decoration positions to the post-change doc, which
+// is what we want for an unaffected edit. Turns per-keystroke cost
+// from O(doc) to O(change size) on plain-prose edits of large atoms.
+function changeAffectsImages(tr: Transaction, existing: DecorationSet): boolean {
+  let affected = false;
+  tr.changes.iterChanges((fromA, toA) => {
+    if (affected) return;
+    existing.between(fromA, toA, () => {
+      affected = true;
+      return false;
+    });
+  });
+  if (affected) return true;
+
+  const state = tr.state;
+  tr.changes.iterChanges((_fromA, _toA, fromB, toB) => {
+    if (affected) return;
+    const startLine = state.doc.lineAt(fromB);
+    const endLine = toB > startLine.to ? state.doc.lineAt(toB) : startLine;
+    for (let n = startLine.number; n <= endLine.number; n++) {
+      if (state.doc.line(n).text.includes('![')) {
+        affected = true;
+        break;
+      }
+    }
+  });
+  return affected;
+}
+
 const imageBlocksField = StateField.define<DecorationSet>({
   create: (state) => buildImageBlocks(state),
   update(deco, tr) {
-    // Only the doc content decides which Images exist and where they
-    // sit, so docChanged is the only trigger. Selection and viewport
-    // changes don't affect the widget set (though they do affect
-    // whether the surrounding markdown is shown, which is handled by
-    // the inline-preview ViewPlugin).
-    if (tr.docChanged) return buildImageBlocks(tr.state);
-    return deco;
+    // Selection and viewport changes don't affect the widget set
+    // (though they do affect whether the surrounding markdown is
+    // shown, which is handled by the inline-preview ViewPlugin).
+    if (!tr.docChanged) return deco;
+    // Most keystrokes on a large atom are in plain prose with no
+    // image nearby. Map existing decorations through the change and
+    // skip the full-doc walk unless the change actually touches an
+    // image.
+    const mapped = deco.map(tr.changes);
+    if (!changeAffectsImages(tr, deco)) return mapped;
+    return buildImageBlocks(tr.state);
   },
   provide: (f) => EditorView.decorations.from(f),
 });

@@ -6,6 +6,7 @@ import {
   type EditorState,
   type Extension,
   type Range,
+  type Transaction,
 } from '@codemirror/state';
 import {
   Decoration,
@@ -698,11 +699,53 @@ function buildTableWidgets(state: EditorState): DecorationSet {
   return Decoration.set(ranges, true);
 }
 
+// Detect whether a doc change could have added, removed, or modified
+// a Table node. Two cheap signals:
+//
+//   1. Any existing table decoration overlaps the changed range
+//      (edit to / deletion of an existing table).
+//   2. Any line touched by the change contains a pipe `|`. GFM
+//      tables are pipe-delimited, so every table line has one and
+//      editing one without touching a pipe character is impossible.
+//      Prose rarely contains pipes; the occasional false positive
+//      is fine because `buildTableWidgets` fails cleanly when
+//      lezer didn't emit a Table.
+//
+// If neither fires, skip the full-doc walk and just map existing
+// decorations through the change.
+function changeAffectsTables(tr: Transaction, existing: DecorationSet): boolean {
+  let affected = false;
+  tr.changes.iterChanges((fromA, toA) => {
+    if (affected) return;
+    existing.between(fromA, toA, () => {
+      affected = true;
+      return false;
+    });
+  });
+  if (affected) return true;
+
+  const state = tr.state;
+  tr.changes.iterChanges((_fromA, _toA, fromB, toB) => {
+    if (affected) return;
+    const startLine = state.doc.lineAt(fromB);
+    const endLine = toB > startLine.to ? state.doc.lineAt(toB) : startLine;
+    for (let n = startLine.number; n <= endLine.number; n++) {
+      if (state.doc.line(n).text.includes('|')) {
+        affected = true;
+        break;
+      }
+    }
+  });
+  return affected;
+}
+
 const tableField = StateField.define<DecorationSet>({
   create: (state) => buildTableWidgets(state),
   update(deco, tr) {
-    if (tr.docChanged) return buildTableWidgets(tr.state);
-    return deco;
+    if (!tr.docChanged) return deco;
+    const mapped = deco.map(tr.changes);
+    if (!changeAffectsTables(tr, deco)) return mapped;
+    return buildTableWidgets(tr.state);
   },
   provide: (f) => EditorView.decorations.from(f),
 });
