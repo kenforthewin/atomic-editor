@@ -359,7 +359,7 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
         const rawIndent = node.from - line.from;
         const depth = Math.max(0, Math.floor(rawIndent / 2));
         const BASE_EM = 0.8;
-        const ALCOVE_EM = 0.9;
+        const ALCOVE_EM = 1.2;
         const LEVEL_EM = 0.6;
         const padding = BASE_EM + ALCOVE_EM + depth * LEVEL_EM;
         ranges.push(
@@ -459,10 +459,19 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
       if (node.name === 'TaskMarker' && node.from < node.to) {
         const markText = doc.sliceString(node.from, node.to);
         const checked = /\[x\]/i.test(markText);
+        // Swallow the single trailing space after `[ ]` / `[x]` so the
+        // checkbox widget owns the alcove exactly (mirrors how bullet
+        // markers also swallow their trailing space). Without this the
+        // space stays visible, pushing first-line content to the right
+        // of where wrapped lines start — visible as a 0.3em hang.
+        const hasTrailingSpace =
+          node.to < doc.length &&
+          doc.sliceString(node.to, node.to + 1) === ' ';
+        const replaceTo = hasTrailingSpace ? node.to + 1 : node.to;
         ranges.push(
           Decoration.replace({ widget: new TaskCheckboxWidget(checked) }).range(
             node.from,
-            node.to,
+            replaceTo,
           ),
         );
         if (checked) {

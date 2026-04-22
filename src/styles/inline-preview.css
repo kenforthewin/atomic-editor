@@ -254,7 +254,7 @@
  * marker widths differ per font. */
 .cm-atomic-list-marker {
   display: inline-block;
-  width: 0.6em;
+  width: 0.9em;
   margin-right: 0.3em;
   text-align: right;
 }
@@ -266,12 +266,18 @@
 }
 
 /* GFM task-list checkbox widget — replaces `[ ]` / `[x]` in a task
- * item. The checkbox sits inside the `.cm-atomic-list-marker`
- * wrapper; `margin-right: 0` so the alcove width is entirely the
- * wrapper's, not the checkbox's spacing. */
+ * item. Width matches the list-marker wrapper (0.9em); `margin-right:
+ * 0.3em` adds the breathing room between the checkbox and the item
+ * text. Total footprint = 1.2em, which is what ALCOVE_EM expects in
+ * inline-preview.ts (bullets and checkboxes share the same alcove so
+ * first-line content aligns with wrapped-line content consistently).
+ * The trailing space after `[ ]` in the source is swallowed by the
+ * replace decoration. */
 .cm-atomic-task-checkbox {
-  margin: 0;
-  vertical-align: -0.08em;
+  width: 0.9em;
+  height: 0.9em;
+  margin: 0 0.3em 0 0;
+  vertical-align: -0.15em;
   accent-color: var(--atomic-editor-accent, #7c3aed);
   cursor: pointer;
 }

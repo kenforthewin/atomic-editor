@@ -27,7 +27,7 @@ export function App() {
 
   // Remount when the document changes so cursor/undo state from the
   // previous sample doesn't leak into the next.
-  const documentId = `${sampleSize}`;
+  const documentId = sampleSize;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -35,21 +35,16 @@ export function App() {
 
   return (
     <div className="demo-root" data-theme={theme}>
-      <aside className="demo-controls">
-        <h1 className="demo-title">@atomic-editor/editor</h1>
-        <p className="demo-sub">
-          CodeMirror 6 markdown editor with Obsidian-style inline live preview.
-        </p>
-        <a
-          className="demo-github"
-          href="https://github.com/kenforthewin/atomic-editor"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          View on GitHub →
-        </a>
+      <header className="demo-header">
+        <div className="demo-identity">
+          <h1 className="demo-title">@atomic-editor/editor</h1>
+          <p className="demo-sub">
+            CodeMirror 6 markdown editor with Obsidian-style inline live preview.
+          </p>
+        </div>
 
-        <Section label="Theme">
+        <div className="demo-control">
+          <span className="demo-control-label">Theme</span>
           <SegmentedControl
             value={theme}
             options={[
@@ -58,20 +53,27 @@ export function App() {
             ]}
             onChange={setTheme}
           />
-        </Section>
+        </div>
 
-        <Section label="Sample size">
+        <div className="demo-control">
+          <span className="demo-control-label">Sample</span>
           <SegmentedControl
             value={sampleSize}
             options={SAMPLE_SIZES.map((s) => ({ value: s, label: s }))}
             onChange={setSampleSize}
           />
-          <p className="demo-hint">
-            Document is {formatBytes(markdownSource.length)}. Scroll, edit,
-            select, copy — the raw markdown stays the source of truth.
-          </p>
-        </Section>
-      </aside>
+          <span className="demo-meta">{formatBytes(markdownSource.length)}</span>
+        </div>
+
+        <a
+          className="demo-github"
+          href="https://github.com/kenforthewin/atomic-editor"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          GitHub →
+        </a>
+      </header>
 
       <main className="demo-canvas">
         <AtomicCodeMirrorEditor
@@ -81,17 +83,6 @@ export function App() {
           onLinkClick={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
         />
       </main>
-    </div>
-  );
-}
-
-// ---- small UI bits ----
-
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="demo-section">
-      <div className="demo-section-label">{label}</div>
-      {children}
     </div>
   );
 }
