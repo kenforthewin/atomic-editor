@@ -776,8 +776,11 @@ async function probeTableCellMarkdown(page) {
     `cellTextContent=${JSON.stringify(shape.boldCellText)}`,
   );
 
-  // Focus a decorated cell: decorations should swap to plain text.
-  const swapped = await page.evaluate(() => {
+  // Focus the bold cell and drop the caret inside the `.cm-atomic-
+  // strong` content span. The strong wrap should get `.active` so
+  // its `.cm-atomic-mark` delimiters reveal (display: inline via CSS).
+  // All other cells in the table should remain without any `.active`.
+  const focused = await page.evaluate(() => {
     const wrap = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
       (w) => (w.textContent || '').includes('struck text'),
     );
@@ -785,49 +788,68 @@ async function probeTableCellMarkdown(page) {
     const boldCell = wrap.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')[1];
     if (!boldCell) return null;
     const src = boldCell.querySelector('.cm-atomic-table-cell-source');
-    if (!src) return null;
+    const strong = boldCell.querySelector('.cm-atomic-strong');
+    if (!src || !strong) return null;
     src.focus();
-    // Wait a tick for the focus handler to run.
+    // Place caret inside the strong span's content.
+    const sel = window.getSelection();
+    if (!sel) return null;
+    const range = document.createRange();
+    range.setStart(strong.firstChild ?? strong, 0);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    // Selection changes don't fire a focus event on their own — drive
+    // the update directly by dispatching a keyup (mirroring a real
+    // arrow-key navigation). The keyup handler calls the tracker.
+    src.dispatchEvent(new KeyboardEvent('keyup'));
     return new Promise((resolve) => {
       setTimeout(() => {
+        const strongWrap = boldCell.querySelector('.cm-atomic-strong-wrap');
         resolve({
-          decorated: src.querySelector('.cm-atomic-strong') !== null,
-          text: src.textContent || '',
+          wrapActive: strongWrap?.classList.contains('active') ?? false,
+          otherWrapActiveCount: wrap.querySelectorAll(
+            '.cm-atomic-em-wrap.active, .cm-atomic-strike-wrap.active, .cm-atomic-link-wrap.active',
+          ).length,
         });
-      }, 30);
+      }, 40);
     });
   });
-  if (swapped) {
+  if (focused) {
     record(
-      'cell markdown: focus swaps to plain text',
-      !swapped.decorated && swapped.text === '**bold text**' ? 'pass' : 'fail',
-      `decoratedStillPresent=${swapped.decorated} text=${JSON.stringify(swapped.text)}`,
+      'cell markdown: caret in bold reveals its delimiters',
+      focused.wrapActive && focused.otherWrapActiveCount === 0 ? 'pass' : 'fail',
+      `wrapActive=${focused.wrapActive} otherActive=${focused.otherWrapActiveCount}`,
     );
   } else {
-    record('cell markdown: focus swaps to plain text', 'fail', 'bold cell not found');
+    record(
+      'cell markdown: caret in bold reveals its delimiters',
+      'fail',
+      'bold cell / strong span not found',
+    );
   }
 
-  // Blur the focused cell: decorations should reappear.
-  const reDecorated = await page.evaluate(() => {
+  // Blur the focused cell: all mark wraps should drop `.active`, so
+  // delimiters collapse back to their hidden resting state.
+  const collapsed = await page.evaluate(() => {
     const active = document.activeElement;
     if (active instanceof HTMLElement) active.blur();
-    // Give the blur handler a tick to re-render.
     return new Promise((resolve) => {
       setTimeout(() => {
         const wrap = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
           (w) => (w.textContent || '').includes('struck text'),
         );
-        if (!wrap) return resolve(false);
-        const boldCell = wrap.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')[1];
-        const src = boldCell?.querySelector('.cm-atomic-table-cell-source');
-        resolve(src?.querySelector('.cm-atomic-strong') !== null);
-      }, 30);
+        if (!wrap) return resolve(null);
+        resolve({
+          activeCount: wrap.querySelectorAll('.active').length,
+        });
+      }, 40);
     });
   });
   record(
-    'cell markdown: blur re-decorates',
-    reDecorated ? 'pass' : 'fail',
-    `reDecorated=${reDecorated}`,
+    'cell markdown: blur collapses all delimiters',
+    collapsed && collapsed.activeCount === 0 ? 'pass' : 'fail',
+    `activeCount=${collapsed?.activeCount}`,
   );
 }
 

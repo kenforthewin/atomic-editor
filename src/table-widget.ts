@@ -126,14 +126,6 @@ function readCellSource(cell: HTMLElement): string {
   return (cell.dataset.raw ?? '').trim();
 }
 
-// Strip CommonMark backslash-escapes for display. Per spec, a
-// backslash followed by ASCII punctuation produces the literal char
-// (e.g. `\.` → `.`). We intentionally restrict to ASCII punctuation
-// so a stray `\n` or `\t` in a cell isn't accidentally unescaped.
-function stripEscapes(text: string): string {
-  return text.replace(/\\([!-/:-@[-`{-~])/g, '$1');
-}
-
 function getCellSource(cell: HTMLElement): HTMLElement | null {
   return cell.querySelector<HTMLElement>('.cm-atomic-table-cell-source');
 }
@@ -268,10 +260,14 @@ function matchCellMarkAt(
   return null;
 }
 
-// Build the decorated DOM for a cell's source. The fragment's
-// `textContent` equals `stripEscapes(raw)` — crucial so the cell's
-// input event handler can continue to read `innerText` without caring
-// whether the DOM is decorated or plain.
+// Build the decorated DOM for a cell's source. The parser strips
+// CommonMark backslash escapes inline (so `\*` emits a literal `*`
+// text node); the fragment's `textContent` equals the escape-stripped
+// raw. The cell's input handler reads `textContent` to update
+// `dataset.raw` — round-trip is one-way for escapes (same as the
+// pre-markdown-in-cells behavior), but fully preserves every inline
+// mark delimiter because those live in `display: none` spans inside
+// the DOM rather than being derived on serialize.
 function buildCellSourceDom(raw: string): DocumentFragment {
   const frag = document.createDocumentFragment();
   const tokens = parseCellInline(raw);
@@ -355,24 +351,23 @@ function makeCellMark(text: string): HTMLElement {
   return el;
 }
 
-// Render a cell source element in its decorated (unfocused) form.
-// Safe to call multiple times — overwrites whatever was there.
+// Render a cell source element in its decorated form. Safe to call
+// multiple times — overwrites whatever was there.
+//
+// Marks start collapsed: all `.cm-atomic-mark` descendants (delimiters
+// like `**`, `_`, `~~`, `[`, `]`, `(`, `)`, and URL text) are hidden
+// via CSS by default. When the caret enters a mark wrap, JS adds an
+// `active` class that reveals that wrap's delimiters — mirroring the
+// outer editor's cursor-inside-link unfold for every inline mark.
 function renderCellSourceDecorated(source: HTMLElement): void {
   const raw = source.parentElement?.dataset.raw ?? '';
   source.replaceChildren(buildCellSourceDom(raw));
 }
 
-// Render a cell source element in plain-text (focused/editing) form.
-function renderCellSourcePlain(source: HTMLElement): void {
-  const raw = source.parentElement?.dataset.raw ?? '';
-  source.textContent = stripEscapes(raw);
-}
-
-// Caret utilities for the focus/blur DOM swap. Both encode positions
-// as character offsets within the element's textContent so the
-// decorated-vs-plain DOM shapes are interchangeable — an offset
-// measured in one shape lands on the same visible character in the
-// other.
+// Caret utilities — encode positions as character offsets within the
+// element's textContent so we can survive the full-DOM re-render that
+// follows every keystroke (new marks need to decorate immediately;
+// the whole tree rebuilds from scratch).
 
 function getCaretCharOffset(container: HTMLElement): number | null {
   const selection = container.ownerDocument?.defaultView?.getSelection();
@@ -416,6 +411,52 @@ function setCaretCharOffset(container: HTMLElement, offset: number): void {
   range.collapse(true);
   selection.removeAllRanges();
   selection.addRange(range);
+}
+
+const MARK_WRAP_CLASSES = [
+  'cm-atomic-strong-wrap',
+  'cm-atomic-em-wrap',
+  'cm-atomic-strike-wrap',
+  'cm-atomic-link-wrap',
+];
+
+function isMarkWrap(el: Element): boolean {
+  for (const c of MARK_WRAP_CLASSES) if (el.classList.contains(c)) return true;
+  return false;
+}
+
+// Reveal the delimiters of whatever mark wrap(s) contain the caret,
+// and collapse every other wrap in this cell. Walks from the caret
+// anchor up to the source element, flagging every ancestor mark wrap
+// so nested marks (bold-containing-italic) all reveal together — the
+// user sees the full structure around their caret.
+function updateActiveMarkForSource(source: HTMLElement): void {
+  // Clear existing `active` classes within this cell only — other
+  // cells track their own state via their own focus lifecycle.
+  for (const el of source.querySelectorAll('.active')) {
+    el.classList.remove('active');
+  }
+
+  const doc = source.ownerDocument;
+  if (!doc) return;
+  const selection = doc.defaultView?.getSelection();
+  if (!selection || selection.rangeCount === 0) return;
+  const anchor = selection.anchorNode;
+  if (!anchor || !source.contains(anchor)) return;
+
+  let node: Node | null = anchor;
+  while (node && node !== source) {
+    if (node instanceof Element && isMarkWrap(node)) {
+      node.classList.add('active');
+    }
+    node = node.parentNode;
+  }
+}
+
+function clearActiveMarksInSource(source: HTMLElement): void {
+  for (const el of source.querySelectorAll('.active')) {
+    el.classList.remove('active');
+  }
 }
 
 interface CellImage {
@@ -603,40 +644,46 @@ function makeCell(
   source.className = 'cm-atomic-table-cell-source';
   source.contentEditable = 'true';
   source.spellcheck = true;
-  // Decorated (unfocused) DOM on mount. The textContent of the
-  // decorated tree equals `stripEscapes(raw)`, so `source.innerText`
-  // read on `input` returns the same string regardless of whether
-  // the cell is currently focused (plain) or unfocused (decorated).
+  // Decorated DOM on mount. Delimiters (`.cm-atomic-mark`) are
+  // `display: none` by default — the caret can't navigate into them,
+  // the reader sees a clean rendered view. When the caret enters a
+  // mark wrap, JS adds `.active` to reveal that wrap's delimiters —
+  // matching the outer-editor cursor-inside-link unfold, applied
+  // uniformly to every inline mark inside cells.
   cell.appendChild(source);
   renderCellSourceDecorated(source);
 
   source.addEventListener('input', () => {
-    // innerText mirrors what the user sees; collapse any stray
-    // whitespace and update dataset.raw so serialize reads fresh.
-    cell.dataset.raw = source.innerText.replace(/\s+/g, ' ').trim();
+    // textContent (not innerText) so `display: none` delimiters
+    // inside mark wraps are still captured — otherwise a cell
+    // containing `**bold**` would serialize to just `bold` and the
+    // marks would vanish on every keystroke.
+    const raw = (source.textContent ?? '').replace(/\s+/g, ' ').trim();
+    cell.dataset.raw = raw;
+
+    // Re-parse + re-render so marks the user typed (e.g. a new pair
+    // of `**`) decorate immediately. Caret offset preserved across
+    // the DOM rebuild.
+    const offset = getCaretCharOffset(source);
+    renderCellSourceDecorated(source);
+    if (offset != null) setCaretCharOffset(source, offset);
+    updateActiveMarkForSource(source);
+
     refreshCellPreview(cell);
     dispatchModelFromDom(view, cell);
   });
 
-  // Focus / blur: swap between decorated and plain DOM. Decorated
-  // while idle so the reader sees bold / italic / strike / links
-  // rendered; plain while editing so the browser's contenteditable
-  // isn't inserting the user's typing into styled descendant spans.
-  source.addEventListener('focus', () => {
-    // Measure the browser-placed caret BEFORE rewriting the DOM.
-    // Offset is measured against the decorated DOM's textContent;
-    // the plain DOM has the same textContent, so the same offset
-    // lands on the same visible character.
-    const offset = getCaretCharOffset(source);
-    renderCellSourcePlain(source);
-    if (offset != null) setCaretCharOffset(source, offset);
-  });
+  // Caret-position listeners. `focus` / `mouseup` / `keyup` cover the
+  // three ways the caret can land in a new mark without firing an
+  // input event (click-to-place, arrow-key nav, tab-into-cell). The
+  // update is idempotent — redundant calls cost nothing.
+  source.addEventListener('focus', () => updateActiveMarkForSource(source));
+  source.addEventListener('mouseup', () => updateActiveMarkForSource(source));
+  source.addEventListener('keyup', () => updateActiveMarkForSource(source));
 
-  source.addEventListener('blur', () => {
-    // Re-decorate from the current raw. No caret to preserve — the
-    // cell just lost focus.
-    renderCellSourceDecorated(source);
-  });
+  // Blur: collapse every active wrap so the reader-resting state
+  // hides all delimiters.
+  source.addEventListener('blur', () => clearActiveMarksInSource(source));
 
   source.addEventListener('keydown', (event) => {
     if (event.key === 'Tab') {

@@ -362,22 +362,34 @@
 }
 
 /* Inline-mark delimiters (`**`, `__`, `*`, `_`, `~~`, `[`, `]`, `(`, `)`,
- * URLs) inside table cells. The decorated cell's textContent must equal
- * the raw source so the contenteditable round-trip still works — we
- * can't `display: none` the delimiters. Instead we deemphasize them
- * so the visible content reads cleanly: faint color, plus size-
- * shrink + letter-spacing-squash so the delimiter doesn't reserve
- * prominent visual space. */
+ * URLs) inside table cells. Hidden by default so the reader sees only
+ * the rendered content — bold text without `**`, link text without
+ * brackets or URL. The delimiters remain in the DOM (so textContent
+ * round-trips to the raw markdown on input) but take zero space and
+ * the caret can't navigate into them.
+ *
+ * When the caret enters a mark wrap, JS adds `active` and the
+ * descendant delimiters reveal — so the user can actually edit them.
+ * Nested marks (bold-containing-italic) all reveal together when any
+ * of them contains the caret, because the JS walks ancestors. */
 .cm-atomic-table-cell-source .cm-atomic-mark {
+  display: none;
+}
+
+.cm-atomic-table-cell-source .cm-atomic-strong-wrap.active > .cm-atomic-mark,
+.cm-atomic-table-cell-source .cm-atomic-em-wrap.active > .cm-atomic-mark,
+.cm-atomic-table-cell-source .cm-atomic-strike-wrap.active > .cm-atomic-mark,
+.cm-atomic-table-cell-source .cm-atomic-link-wrap.active > .cm-atomic-mark {
+  display: inline;
   color: var(--atomic-editor-fg-faint, #666);
   font-weight: normal;
   font-style: normal;
   text-decoration: none;
 }
 
-/* Link URL specifically: monospace hint that this is a URL, plus a
- * size cut so long URLs don't dominate the cell width. */
-.cm-atomic-table-cell-source .cm-atomic-link-url {
+/* Link URL: monospace hint + size cut so a long URL doesn't dominate
+ * the cell's width once its wrap becomes active. */
+.cm-atomic-table-cell-source .cm-atomic-link-wrap.active > .cm-atomic-link-url {
   font-family: var(--atomic-editor-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 0.88em;
 }
