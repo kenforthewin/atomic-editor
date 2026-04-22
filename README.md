@@ -238,10 +238,19 @@ rationale. Short version:
 git clone https://github.com/kenforthewin/atomic-editor
 cd atomic-editor
 npm install
-npm run dev    # demo dev server at http://localhost:5173
-npm test       # vitest
-npm run build  # tsc emit to dist/
+npm run dev        # demo dev server at http://localhost:5173
+npm test           # vitest unit tests
+npm run build      # tsc emit to dist/
+npm run test:e2e   # Playwright probe suite against the demo
 ```
+
+The Playwright suite (`scripts/test-editor.mjs`) is the primary
+regression-catching tool — ~33 probes covering CLS during idle /
+scroll / typing, click-freeze timing, block-type decorations
+(headings, lists, tasks, tables, images, fences, HRs), copy-as-raw-
+markdown, tight-list continuation, escape handling, and late-doc
+rendering via the parser-progress mechanic. Run after any change to
+the editor's extensions.
 
 Issues and PRs welcome.
 

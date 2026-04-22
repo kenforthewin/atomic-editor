@@ -59,6 +59,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "node scripts/test-editor.mjs",
+    "test:e2e:headed": "node scripts/test-editor.mjs --headed",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
   "peerDependencies": {
@@ -133,6 +135,7 @@
     "@vitejs/plugin-react": "^4.3.0",
     "cpy-cli": "^5.0.0",
     "happy-dom": "^20.9.0",
+    "playwright": "^1.59.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.6.0",

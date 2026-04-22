@@ -1,6 +1,7 @@
 node_modules
 dist
 demo-dist
+.harness-screenshots
 *.tsbuildinfo
 .DS_Store
 .idea
