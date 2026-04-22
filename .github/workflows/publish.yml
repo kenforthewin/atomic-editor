@@ -1,5 +1,13 @@
 name: Publish
 
+# Tag `v*` → publish to npm. Authentication uses npm Trusted
+# Publishers (OIDC) rather than a long-lived NPM_TOKEN secret: the
+# workflow presents a GitHub-signed OIDC token, npm verifies it
+# matches the trusted-publisher config registered for the package,
+# and the publish proceeds. See
+# https://docs.npmjs.com/trusted-publishers for the one-time npm-side
+# setup (Packages → Publishing access → GitHub Actions).
+
 on:
   push:
     tags:
@@ -10,7 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # for npm provenance
+      # id-token: write is what enables OIDC — required for both the
+      # provenance attestation AND the Trusted Publisher auth flow.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,7 +28,8 @@ jobs:
           node-version: 20
           registry-url: 'https://registry.npmjs.org'
           cache: npm
+      # Trusted Publishers requires npm >= 11.5.1; Node 20 ships with
+      # npm 10.x, so pin to latest explicitly.
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
