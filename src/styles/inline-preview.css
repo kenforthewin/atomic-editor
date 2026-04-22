@@ -321,7 +321,21 @@
  * going wider than the viewport on mobile when a wide table
  * entered the rendered viewport. */
 .cm-atomic-table {
-  margin: 0.5em 0;
+  /* Use padding, not margin, for vertical rhythm around the table.
+   * CM6's heightmap measures block-widget heights via
+   * `getBoundingClientRect`, which EXCLUDES margin but INCLUDES
+   * padding. A `margin: 0.5em 0` here meant the heightmap allocated
+   * less height than the DOM layout flow actually consumed — 1em
+   * (~17px) less on typical font sizes. That drift shifted every
+   * line below the table in CM6's heightmap vs the DOM, so clicks
+   * at a visual Y were routed to the doc line BELOW the one
+   * visually targeted. User-visible symptom: clicking an empty
+   * line above a heading placed the caret on the heading; clicking
+   * text in a task item with the caret on the empty line below
+   * left the caret in place (because the "wrong" line was the same
+   * as the current caret). Padding keeps the bbox honest so CM6's
+   * heightmap matches the DOM. */
+  padding: 0.5em 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;

@@ -925,6 +925,110 @@ async function probeHeadingClickTargets(page) {
   );
 }
 
+async function probeWidgetMarginDrift(page) {
+  // Regression guard for a bug where a block widget's wrapper used
+  // vertical `margin` instead of `padding`. `margin` is excluded
+  // from `getBoundingClientRect`, which is what CM6 measures block-
+  // widget heights with. The DOM's layout flow still reserved the
+  // margin space — so every line below the widget became offset in
+  // CM6's heightmap vs the actual DOM. Clicks at a visual Y then
+  // routed to the doc line BELOW the one the user aimed at.
+  //
+  // Behavioral check: clicking the empty line just above `## And
+  // the usual markdown` must land the caret on the empty line, not
+  // on the heading. That empty line sits below the showcase table
+  // (the block widget whose margin-vs-padding caused the original
+  // regression), so any future widget-height mis-measurement that
+  // adds a similar offset would make this probe fail.
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.waitForTimeout(200);
+  for (let step = 0; step < 12; step++) {
+    const present = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line.cm-atomic-h2')).some(
+        (el) => (el.textContent || '').includes('And the usual markdown'),
+      ),
+    );
+    if (present) break;
+    await page.locator('.cm-scroller').evaluate((el) => {
+      el.scrollTop += 200;
+    });
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(300);
+
+  const target = await page.evaluate(() => {
+    const h2 = Array.from(document.querySelectorAll('.cm-line.cm-atomic-h2')).find(
+      (el) => (el.textContent || '').includes('And the usual markdown'),
+    );
+    const emptyAbove = h2?.previousElementSibling;
+    if (!h2 || !emptyAbove || (emptyAbove.textContent || '').trim().length > 0) {
+      return null;
+    }
+    const r = emptyAbove.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, height: r.height };
+  });
+  if (!target) {
+    record(
+      'click routing: empty line above heading lands on the empty line',
+      'fail',
+      'could not locate empty line above heading',
+    );
+    return;
+  }
+  // Click at several Y positions across the empty line — top edge,
+  // center, bottom edge. The bug routed clicks in the bottom
+  // portion of the line to the heading below, so the bottom-edge
+  // sample is the most sensitive. Pre-seed the caret to the heading
+  // so a no-op dispatch (bug's wrong-position-equals-current-position
+  // path) wouldn't silently pass.
+  const clickX = 300;
+  const samples = [
+    { label: 'top-edge', y: target.top + 1 },
+    { label: 'center', y: target.top + target.height / 2 },
+    { label: 'bottom-edge', y: target.bottom - 1 },
+  ];
+  const results = [];
+  for (const { label, y } of samples) {
+    await page.evaluate(() => {
+      const h2 = Array.from(
+        document.querySelectorAll('.cm-line.cm-atomic-h2'),
+      ).find((el) => (el.textContent || '').includes('And the usual markdown'));
+      if (!h2) return;
+      const range = document.createRange();
+      range.setStart(h2, 0);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    });
+    await page.mouse.click(clickX, y);
+    await page.waitForTimeout(120);
+    const landed = await page.evaluate(() => {
+      const sel = window.getSelection();
+      const node = sel?.anchorNode;
+      const lineEl =
+        node?.nodeType === 1
+          ? /** @type {Element} */ (node).closest?.('.cm-line')
+          : /** @type {Element | null | undefined} */ (node?.parentElement)?.closest?.('.cm-line');
+      return {
+        isHeading: lineEl?.classList.contains('cm-atomic-h2') ?? false,
+        isEmpty: (lineEl?.textContent || '').trim().length === 0,
+      };
+    });
+    results.push({ label, y: Math.round(y), ...landed });
+  }
+  const failed = results.filter((r) => r.isHeading || !r.isEmpty);
+  record(
+    'click routing: empty line above heading lands on the empty line',
+    failed.length === 0 ? 'pass' : 'fail',
+    failed.length === 0
+      ? `all ${results.length} samples ok`
+      : `failed at ${failed.map((f) => `${f.label}(y=${f.y})`).join(', ')}`,
+  );
+}
+
 async function probeHorizontalRule(page) {
   // The showcase section includes a `---` line. On inactive (cold)
   // state it should be classed as `cm-atomic-hr` so the CSS rule
@@ -1541,6 +1645,7 @@ async function run() {
     await probeNestedListExit(page);
     await probeCloseBrackets(page);
     await probeHeadingClickTargets(page);
+    await probeWidgetMarginDrift(page);
     await probeHorizontalRule(page);
     await probeTableWidget(page);
     await probeTableCellMarkdown(page);
