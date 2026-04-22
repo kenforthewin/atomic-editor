@@ -235,12 +235,12 @@ async function probeClickFreeze(page) {
   // after the mouse is released, once the freeze tail expires.
   const h2 = page.locator('.cm-line.cm-atomic-h2').first();
   if ((await h2.count()) === 0) {
-    record('click freeze: heading stays rendered during click', 'fail', 'no H2 line');
+    record('click freeze: heading stays rendered mid-click', 'fail', 'no H2 line');
     return;
   }
   const box = await h2.boundingBox();
   if (!box) {
-    record('click freeze: heading stays rendered during click', 'fail', 'no bbox');
+    record('click freeze: heading stays rendered mid-click', 'fail', 'no bbox');
     return;
   }
 
@@ -249,23 +249,52 @@ async function probeClickFreeze(page) {
   // character.
   const textBefore = (await h2.textContent())?.trim() ?? '';
 
-  await page.mouse.click(box.x + Math.min(box.width / 3, 80), box.y + box.height / 2);
+  // Let any in-flight work from the prior probe settle before we try
+  // to race the freeze mechanic. Without this buffer the probe starts
+  // mid-dispatch on slow CI runners and the first-sample read catches
+  // the pre-freeze reveal from a selection change still processing.
+  await page.waitForTimeout(200);
 
-  // Within the freeze window (<160ms), the syntax should still be hidden.
-  await page.waitForTimeout(30);
-  const textDuringFreeze = (await h2.textContent())?.trim() ?? '';
-  const stayedRendered = !/^##\s/.test(textDuringFreeze);
+  const clickX = box.x + Math.min(box.width / 3, 80);
+  const clickY = box.y + box.height / 2;
 
-  // After the freeze tail, syntax should be revealed.
-  await page.waitForTimeout(250);
-  const textAfterFreeze = (await h2.textContent())?.trim() ?? '';
-  const revealed = /^##\s/.test(textAfterFreeze);
+  // Explicit down/up instead of page.mouse.click(): we want to hold
+  // the pointer down and measure while the freeze is active, without
+  // racing pointerup's FREEZE_TAIL_MS=100 release timer. Real user
+  // clicks always span at least one frame between down and up, so
+  // simulating a held press is closer to the intended UX anyway.
+  await page.mouse.move(clickX, clickY);
+  await page.mouse.down();
+
+  // Sample the heading text several times across the held-pointer
+  // window. The freeze effect dispatches synchronously in the
+  // capture-phase pointerdown handler, so we should never observe a
+  // "## " reveal during this window. Multiple samples catch both
+  // fast-race regressions (reveal-then-hide inside a few ms) and
+  // slow-settle bugs (wrong initial state). All samples must show
+  // hidden syntax.
+  const samples = [];
+  for (let i = 0; i < 5; i++) {
+    const text = (await h2.textContent())?.trim() ?? '';
+    samples.push(text);
+    if (i < 4) await page.waitForTimeout(15);
+  }
+  await page.mouse.up();
+
+  const stayedRendered = samples.every((s) => !/^##\s/.test(s));
+  const textDuringFreeze = samples.find((s) => /^##\s/.test(s)) ?? samples[0];
 
   record(
     'click freeze: heading stays rendered mid-click',
     stayedRendered ? 'pass' : 'fail',
-    `before="${textBefore.slice(0, 40)}" duringFreeze="${textDuringFreeze.slice(0, 40)}"`,
+    `before="${textBefore.slice(0, 40)}" duringFreeze="${textDuringFreeze.slice(0, 40)}" samples=${samples.length}`,
   );
+
+  // After the freeze tail (100ms from mouseup), syntax should reveal.
+  await page.waitForTimeout(250);
+  const textAfterFreeze = (await h2.textContent())?.trim() ?? '';
+  const revealed = /^##\s/.test(textAfterFreeze);
+
   record(
     'click freeze: syntax revealed after tail',
     revealed ? 'pass' : 'fail',
