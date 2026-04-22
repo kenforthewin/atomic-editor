@@ -1,4 +1,4 @@
-# @atomic-editor/editor
+# Atomic Editor
 
 **A CodeMirror 6 markdown editor with Obsidian-style inline live preview.**
 Renders headings, bold, italic, links, images, and tables WYSIWYG while

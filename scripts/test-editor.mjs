@@ -862,6 +862,19 @@ async function probeHorizontalRule(page) {
   });
   await page.waitForTimeout(200);
 
+  // Scroll until the HR is in the rendered viewport (CM6 virtualizes,
+  // so elements outside the viewport don't exist in the DOM).
+  for (let step = 0; step < 12; step++) {
+    const present = await page.evaluate(
+      () => document.querySelector('.cm-line.cm-atomic-hr') !== null,
+    );
+    if (present) break;
+    await page.locator('.cm-scroller').evaluate((el) => {
+      el.scrollTop += 200;
+    });
+    await page.waitForTimeout(120);
+  }
+
   const info = await page.evaluate(() => {
     const el = document.querySelector('.cm-line.cm-atomic-hr');
     if (!el) return { found: false };
@@ -935,12 +948,14 @@ async function probeBackslashEscape(page) {
   );
 
   // Click the line to activate it, then confirm the raw `\.` returns.
+  // Use locator.click — auto-scrolls the element into view and does
+  // the actionability checks, more reliable than computing the box
+  // and calling page.mouse.click at those coords (which can miss
+  // when the target lands at a viewport edge).
   const sampleLine = page
     .locator('.cm-line', { hasText: 'Escapes like' })
     .first();
-  const box = await sampleLine.boundingBox();
-  if (!box) return;
-  await page.mouse.click(box.x + 20, box.y + box.height / 2);
+  await sampleLine.click({ position: { x: 20, y: 4 } });
   await page.waitForTimeout(200);
 
   const active = await page.evaluate(() => {
@@ -1099,9 +1114,22 @@ async function probeImageBlock(page) {
   // URL parsed from the source. Natural images smaller than the
   // content width should NOT be upscaled.
   await page.locator('.cm-scroller').evaluate((el) => {
-    el.scrollTop = 750;
+    el.scrollTop = 0;
   });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(200);
+  // Scroll until an image widget lands in the virtualized viewport.
+  for (let step = 0; step < 15; step++) {
+    const present = await page.evaluate(
+      () => document.querySelector('.cm-atomic-image') !== null,
+    );
+    if (present) break;
+    await page.locator('.cm-scroller').evaluate((el) => {
+      el.scrollTop += 250;
+    });
+    await page.waitForTimeout(150);
+  }
+  // Give the image's intrinsic size a beat to settle.
+  await page.waitForTimeout(300);
 
   const imgInfo = await page.evaluate(() => {
     const widget = document.querySelector('.cm-atomic-image');

@@ -26,6 +26,32 @@ const WORDS = [
   'syntax', 'parser', 'tree', 'token', 'highlight', 'theme', 'dark', 'panel',
 ];
 
+// Deterministic code block used in the demo's hero section. Pinned
+// to TypeScript because the editor's own source code is TypeScript
+// and the variety of syntax tokens (keywords, strings, comments,
+// numbers, punctuation) makes the highlight theme pop.
+const SHOWCASE_CODE = {
+  lang: 'typescript',
+  body: `// A tiny markdown chunker. Every token in this block is
+// highlighted by a lazy-loaded CodeMirror grammar — open the
+// "Sample" picker above and the TypeScript grammar only loads
+// when a \`\`\`ts fence first appears on screen.
+export function chunkMarkdown(input: string): string[] {
+  const blocks: string[] = [];
+  let cursor = 0;
+  while (cursor < input.length) {
+    const nextBreak = input.indexOf('\\n\\n', cursor);
+    if (nextBreak === -1) {
+      blocks.push(input.slice(cursor));
+      break;
+    }
+    blocks.push(input.slice(cursor, nextBreak));
+    cursor = nextBreak + 2;
+  }
+  return blocks;
+}`,
+};
+
 const CODE_SAMPLES = [
   {
     lang: 'typescript',
@@ -300,36 +326,32 @@ export function generateSampleMarkdown(
     (includeCodeBlocks ? 0 : 0xc0de100);
   const rng = mulberry32(seed);
 
-  const labelBits: string[] = [];
-  if (imageless) labelBits.push('imageless');
-  if (!includeSeparators) labelBits.push('no separators');
-  if (!includeTables) labelBits.push('no tables');
-  if (!includeLists) labelBits.push('no lists');
-  if (!includeCodeBlocks) labelBits.push('no code blocks');
-  const label = labelBits.length ? ` (${labelBits.join(', ')})` : '';
-
   const sections: string[] = [
-    `# Editor harness — ${size}${label}`,
-    `_A deterministic markdown sample used to stress-test the Atomic editor at scale. Seed: \`0x${seed.toString(16)}\`_`,
-    // Deterministic intro showcasing every block kind — gives the harness
-    // (and anyone opening the page) a consistent place to poke at
-    // headings, lists, task lists, tables, and code fences without
-    // scrolling through random content.
-    '## 0. Block showcase',
-    paragraph(rng),
+    `# Atomic Editor`,
+    `_CodeMirror 6 markdown editor with Obsidian-style inline live preview — WYSIWYG tables, syntax-highlighted code, interactive checkboxes, and cursor-scoped link unfold. Showing a ${size} sample._`,
+    // Hero section — the three features that make users go "oh nice"
+    // on first load. Deterministic content so the first-visit
+    // impression is stable across reloads; random / varied content
+    // for the section loop below.
+    '## Try it',
   ];
-  // The showcase `---` is the single most testable HR line — put it
-  // front-and-center when separators are on, leave it out otherwise.
-  if (includeSeparators) sections.push('---');
-  if (includeLists) sections.push(list(rng), taskList(rng));
-  if (includeTables) {
-    // Deterministic inline-marks table so probes can target a known
-    // bold / italic / strike / link cell. First row is the baseline
-    // (the probe targets row 0); subsequent rows add variety so the
-    // demo surfaces every supported combination at a glance —
-    // delimiter variants, nesting, escapes, and cases that should
-    // deliberately NOT decorate.
+  // 1. Fenced code block — shows per-grammar syntax highlighting.
+  if (includeCodeBlocks) {
     sections.push(
+      'Fenced code blocks pick up per-language syntax highlighting. The grammar loads lazily — only fences you actually open hit the wire:',
+      '```' + SHOWCASE_CODE.lang + '\n' + SHOWCASE_CODE.body + '\n```',
+    );
+  }
+  // 2. WYSIWYG table with inline markdown rendering inside cells.
+  if (includeTables) {
+    sections.push(
+      'Tables render WYSIWYG. Click a cell to edit in place — inline markdown inside cells reveals its delimiters only when your cursor enters:',
+      // Deterministic inline-marks table so probes can target a known
+      // bold / italic / strike / link cell. First row is the baseline
+      // (probes target row 0); subsequent rows add variety so every
+      // supported combination appears at a glance — delimiter
+      // variants, nesting, escapes, and cases that should
+      // deliberately NOT decorate.
       [
         '| Plain | Bold | Italic | Strike | Link |',
         '|---|---|---|---|---|',
@@ -339,9 +361,26 @@ export function generateSampleMarkdown(
         '| escapes | \\*literal stars\\* | \\_literal underscores\\_ | \\~\\~not strike\\~\\~ | \\[not a link\\] |',
         '| non-matches | snake_case_var | ident_with_underscores | `code stays raw` | https://example.org raw url |',
       ].join('\n'),
-      table(rng, imageless),
     );
   }
+  // 3. Interactive task list — invites the user to actually click
+  // something and feel the editor respond.
+  if (includeLists) {
+    sections.push(
+      'Task lists are real checkboxes — click any of them to toggle. Pressing Enter on a task continues the list; Enter on an empty item dedents.',
+      [
+        '- [ ] Click me to toggle',
+        '- [x] This one is already done',
+        '- [ ] Tap at the end of this line and press Enter to continue the list',
+      ].join('\n'),
+    );
+  }
+  // Secondary section — a deliberate "read the prose" zone after
+  // the hero trio. Sets context for what the editor can do with
+  // ordinary text: headings, emphasis, escapes, collapsed links.
+  sections.push('## And the usual markdown', paragraph(rng));
+  if (includeSeparators) sections.push('---');
+  if (includeLists) sections.push(list(rng));
   if (!imageless) {
     // Seeded picsum image — deterministic (same seed → same image
     // bytes) so the image-block widget, screenshots, and scroll
@@ -349,7 +388,6 @@ export function generateSampleMarkdown(
     // mode to isolate image-independent layout / scroll behavior.
     sections.push(imageBlock(rng));
   }
-  if (includeCodeBlocks) sections.push(codeBlock(rng));
   sections.push(
     quote(rng),
     // Backslash-escape sample — RSS-to-markdown converters over-escape
