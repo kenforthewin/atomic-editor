@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.2.1]
+
+### Fixed
+
+- **Crash on multi-line link / image titles.** A markdown link or image
+  whose title wraps across lines — e.g. `[text](url "first\nsecond")` —
+  threw `RangeError: Decorations that replace line breaks may not be
+  specified via plugins` and took the editor down on mount. Root cause:
+  the inline-preview `ViewPlugin` hides syntax tokens via
+  `Decoration.replace`, and CM6 forbids plugin-sourced replaces from
+  crossing a newline (block / line-spanning decorations must come from a
+  `StateField`). Lezer legitimately emits such nodes for wrapped
+  `LinkTitle` / image-title constructs. Every replace in the builder is
+  now routed through a `pushReplace` helper that splits multi-line
+  ranges into per-line segments; the first segment keeps any widget, so
+  bullet / checkbox markers still render exactly once.
+
 ## [0.2.0]
 
 ### Added
