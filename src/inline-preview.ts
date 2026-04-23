@@ -7,6 +7,7 @@ import {
   StateField,
   type Extension,
   type Range,
+  type Text,
 } from '@codemirror/state';
 import {
   Decoration,
@@ -243,6 +244,47 @@ class TaskCheckboxWidget extends WidgetType {
   }
 }
 
+// ViewPlugin-sourced Decoration.replace ranges are forbidden from
+// crossing a line break — CM6 throws "Decorations that replace line
+// breaks may not be specified via plugins" at build time. Lezer
+// happily emits tokens that do cross line breaks (a LinkTitle /
+// Image title "wrapping across\ntwo lines", for instance), so every
+// Decoration.replace we push has to be split into per-line segments
+// first. The newline between segments stays visible — acceptable
+// compromise, and it matches how other markdown editors render these
+// uncommon multi-line forms.
+function pushReplace(
+  ranges: Range<Decoration>[],
+  doc: Text,
+  from: number,
+  to: number,
+  spec: Parameters<typeof Decoration.replace>[0] = {},
+): void {
+  if (from >= to) return;
+  const startLine = doc.lineAt(from);
+  if (to <= startLine.to) {
+    ranges.push(Decoration.replace(spec).range(from, to));
+    return;
+  }
+  // Multi-line: first segment carries the widget (if any) so it
+  // renders in place of the opening token; subsequent segments are
+  // plain hides. Emitting the widget on every segment would stack
+  // duplicates (e.g. a BulletWidget on line 2+ of a wrapped item).
+  let cursor = from;
+  let firstSegment = true;
+  while (cursor < to) {
+    const line = doc.lineAt(cursor);
+    const segEnd = Math.min(to, line.to);
+    if (segEnd > cursor) {
+      ranges.push(
+        Decoration.replace(firstSegment ? spec : {}).range(cursor, segEnd),
+      );
+      firstSegment = false;
+    }
+    cursor = line.to + 1;
+  }
+}
+
 function buildInlineDecorations(view: EditorView): DecorationSet {
   const { state } = view;
   const { doc } = state;
@@ -362,7 +404,7 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
               hideTo++;
             }
           }
-          ranges.push(Decoration.replace({}).range(node.from, hideTo));
+          pushReplace(ranges, doc, node.from, hideTo);
         }
       }
 
@@ -376,7 +418,7 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
       if (node.name === 'Escape' && node.to - node.from >= 2) {
         const lineNum = doc.lineAt(node.from).number;
         if (!activeLines.has(lineNum)) {
-          ranges.push(Decoration.replace({}).range(node.from, node.from + 1));
+          pushReplace(ranges, doc, node.from, node.from + 1);
         }
       }
 
@@ -427,19 +469,14 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
 
         if (taskFrom !== undefined) {
           // Hide `- ` (ListMark through the space before `[`).
-          ranges.push(Decoration.replace({}).range(node.from, taskFrom));
+          pushReplace(ranges, doc, node.from, taskFrom);
         } else {
           const markText = doc.sliceString(node.from, node.to);
           if (markText === '-' || markText === '*' || markText === '+') {
             // Bullet: substitute with the fixed-width marker
             // widget, swallowing the trailing space so content
             // starts precisely at padding-left.
-            ranges.push(
-              Decoration.replace({ widget: BULLET_WIDGET }).range(
-                node.from,
-                markEnd,
-              ),
-            );
+            pushReplace(ranges, doc, node.from, markEnd, { widget: BULLET_WIDGET });
           } else {
             // Ordered list (or anything else with a non-standard
             // mark text like `1.`, `42.`): keep the text visible
@@ -453,7 +490,7 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
               ),
             );
             if (hasTrailingSpace) {
-              ranges.push(Decoration.replace({}).range(node.to, markEnd));
+              pushReplace(ranges, doc, node.to, markEnd);
             }
           }
         }
@@ -475,7 +512,7 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
         const line = doc.lineAt(node.from);
         if (!activeLines.has(line.number)) {
           ranges.push(Decoration.line({ class: 'cm-atomic-hr' }).range(line.from));
-          ranges.push(Decoration.replace({}).range(line.from, line.to));
+          pushReplace(ranges, doc, line.from, line.to);
         }
       }
 
@@ -496,7 +533,7 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
           // back up." The tradeoff is one line of empty space
           // above each rendered image, which actually reads a bit
           // cleaner as visual separation anyway.
-          ranges.push(Decoration.replace({}).range(node.from, node.to));
+          pushReplace(ranges, doc, node.from, node.to);
         }
       }
 
@@ -512,12 +549,9 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
           node.to < doc.length &&
           doc.sliceString(node.to, node.to + 1) === ' ';
         const replaceTo = hasTrailingSpace ? node.to + 1 : node.to;
-        ranges.push(
-          Decoration.replace({ widget: new TaskCheckboxWidget(checked) }).range(
-            node.from,
-            replaceTo,
-          ),
-        );
+        pushReplace(ranges, doc, node.from, replaceTo, {
+          widget: new TaskCheckboxWidget(checked),
+        });
         if (checked) {
           const lineNum = doc.lineAt(node.from).number;
           const line = doc.line(lineNum);
