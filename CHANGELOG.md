@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.2.0]
+
+### Added
+
+- **`initialRevealText` prop + `revealText(query)` imperative method**
+  for arriving-from-search-result navigation. Scrolls the first match
+  near the top of its scroll parent (handles editors embedded in a
+  larger scrolling shell) and paints a 3.2 s fade-out highlight — no
+  search panel, no cursor move, no lingering UI. Matcher falls back
+  progressively (exact → whitespace-collapsed → individual lines →
+  truncated prefixes at 140 and 80 chars) so hits resolve even when
+  the query came from an LLM-massaged snippet that doesn't match the
+  source byte-for-byte.
+- CSS variables `--atomic-editor-initial-reveal-bg` and
+  `--atomic-editor-initial-reveal-bg-strong` for theming the peak and
+  settled colors of the reveal highlight independently of the main
+  search-match palette.
+
 ## [0.1.1]
 
 ### Fixed

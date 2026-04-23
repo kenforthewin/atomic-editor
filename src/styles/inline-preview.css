@@ -599,6 +599,41 @@
   background: var(--atomic-editor-search-bg-active, rgba(124, 58, 237, 0.6));
 }
 
+/* Initial reveal highlight — paired with the `initialRevealText` prop
+ * and the `revealText()` imperative method on the editor handle.
+ * Starts at a stronger accent-tinted background, settles to a softer
+ * one, then fades to transparent over ~3.2s so the reader's eye
+ * catches the match on arrival without the highlight lingering.
+ *
+ * Two tokens so consumers can theme either the peak or the settled
+ * state independently of the main search-match colors. */
+.cm-initialRevealMatch {
+  background: var(
+    --atomic-editor-initial-reveal-bg,
+    color-mix(in srgb, var(--atomic-editor-accent-soft, #a78bfa) 28%, transparent 72%)
+  );
+  border-radius: 0.2rem;
+  animation: atomic-initial-reveal-fade 3.2s ease-out forwards;
+}
+
+@keyframes atomic-initial-reveal-fade {
+  0% {
+    background: var(
+      --atomic-editor-initial-reveal-bg-strong,
+      color-mix(in srgb, var(--atomic-editor-accent-soft, #a78bfa) 42%, transparent 58%)
+    );
+  }
+  65% {
+    background: var(
+      --atomic-editor-initial-reveal-bg,
+      color-mix(in srgb, var(--atomic-editor-accent-soft, #a78bfa) 28%, transparent 72%)
+    );
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 /* Light-theme overrides. Consumers opt in by setting `data-theme="light"`
  * on any ancestor of the editor. The dark defaults above remain unchanged;
  * this block just re-maps the `--atomic-editor-*` variables with light

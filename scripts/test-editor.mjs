@@ -1283,6 +1283,68 @@ async function probeLinkScope(page) {
   }
 }
 
+async function probeInitialReveal(page) {
+  // Behavior under test: `initialRevealText` renders a fade-out
+  // highlight on the first match and scrolls the match near the top
+  // of the scroll parent. The highlight auto-clears after ~3.2s.
+  //
+  // Reload the demo with `?reveal=<phrase>` — the demo's App reads
+  // that query param and passes it through as `initialRevealText`.
+  const phrase = 'And the usual markdown';
+  const url = `${base}/?reveal=${encodeURIComponent(phrase)}`;
+  await page.goto(url, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.cm-editor');
+  // Wait for the reveal effect to paint.
+  await page.waitForTimeout(400);
+
+  const visible = await page.evaluate(() => {
+    const el = document.querySelector('.cm-initialRevealMatch');
+    if (!(el instanceof HTMLElement)) return { found: false };
+    const r = el.getBoundingClientRect();
+    return {
+      found: true,
+      text: (el.textContent || '').slice(0, 48),
+      top: Math.round(r.top),
+    };
+  });
+  if (!visible.found) {
+    record('initial reveal: highlight renders on mount', 'fail', '.cm-initialRevealMatch not in DOM');
+    return;
+  }
+  record(
+    'initial reveal: highlight renders on mount',
+    visible.text.includes(phrase) ? 'pass' : 'fail',
+    `text=${JSON.stringify(visible.text)}`,
+  );
+
+  // The `scrollMatchNearTop` helper scrolls the match to within ~72px
+  // of the top of its scroll parent. On a fresh viewport (900px tall),
+  // the match should be comfortably above the bottom half.
+  record(
+    'initial reveal: match scrolled near top',
+    visible.top < 450 ? 'pass' : 'fail',
+    `top=${visible.top}px`,
+  );
+
+  // Wait past the fade-out duration + CSS animation tail, then verify
+  // the state field cleared itself (the decoration is gone).
+  await page.waitForTimeout(3500);
+  const stillVisible = await page.evaluate(
+    () => document.querySelector('.cm-initialRevealMatch') !== null,
+  );
+  record(
+    'initial reveal: highlight auto-clears after fade',
+    !stillVisible ? 'pass' : 'fail',
+    `stillPresent=${stillVisible}`,
+  );
+
+  // Re-navigate WITHOUT the reveal param so subsequent probes start
+  // from a clean-URL state.
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.cm-editor');
+  await page.waitForTimeout(200);
+}
+
 async function probeImageBlock(page) {
   // The sample's Block showcase section includes an image; after
   // mount there should be at least one rendered `.cm-atomic-image`
@@ -1652,6 +1714,7 @@ async function run() {
     await probeTableFromMarkdown(page);
     await probeImageBlock(page);
     await probeBackslashEscape(page);
+    await probeInitialReveal(page);
     await probeLinkScope(page);
     await probeTaskList(page);
     await probeCursorPingPong(page);

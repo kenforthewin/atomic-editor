@@ -20,6 +20,14 @@ export function App() {
   const [sampleSize, setSampleSize] = useState<SampleSize>('10 pages');
   const [theme, setTheme] = useState<ThemeMode>('dark');
 
+  // Probe hook — `?reveal=…` in the demo URL triggers the editor's
+  // `initialRevealText` path, so Playwright can drive the reveal
+  // behavior without needing a separate control surface.
+  const revealText = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('reveal');
+  }, []);
+
   const markdownSource = useMemo(
     () => generateSampleMarkdown(sampleSize),
     [sampleSize],
@@ -80,6 +88,7 @@ export function App() {
           markdownSource={markdownSource}
           documentId={documentId}
           codeLanguages={ATOMIC_CODE_LANGUAGES}
+          initialRevealText={revealText}
           onLinkClick={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
         />
       </main>

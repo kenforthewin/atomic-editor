@@ -94,7 +94,32 @@ function App() {
 ```
 
 Methods: `focus`, `undo`, `redo`, `openSearch(query?)`, `closeSearch`,
-`isSearchOpen`, `getMarkdown`, `getContentDOM`.
+`revealText(query)`, `isSearchOpen`, `getMarkdown`, `getContentDOM`.
+
+### Arriving from a search result
+
+Two props drop the user near a relevant paragraph on mount:
+
+- **`initialSearchText`** opens the search panel pre-filled with the
+  query. Full navigation surface — arrow keys to step through matches,
+  close to dismiss. Good when the user explicitly invoked find.
+- **`initialRevealText`** does a less intrusive scroll-into-view with
+  a 3.2 s fade-out highlight on the first match — no panel, no cursor
+  move. Good for "I clicked a search result, take me to the paragraph
+  it came from".
+
+Both accept `string | null`. The reveal matcher falls back
+progressively — exact, whitespace-collapsed, individual lines, then
+truncated prefixes (140 and 80 chars) — so hits still resolve when
+the query came from an LLM-massaged snippet that doesn't match the
+source byte-for-byte. For post-mount reveals, call
+`editorHandle.revealText(query)` via the imperative handle.
+
+The fade highlight uses CSS variables
+`--atomic-editor-initial-reveal-bg` and
+`--atomic-editor-initial-reveal-bg-strong`; override to theme the
+peak and settled colors independently of the main search-match
+palette.
 
 ## Syntax highlighting
 

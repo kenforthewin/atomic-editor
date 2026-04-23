@@ -1,5 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import {
+  Decoration,
   EditorView,
   drawSelection,
   dropCursor,
@@ -9,7 +10,12 @@ import {
   rectangularSelection,
   type Panel,
 } from '@codemirror/view';
-import { EditorState, type Extension } from '@codemirror/state';
+import {
+  EditorState,
+  StateEffect,
+  StateField,
+  type Extension,
+} from '@codemirror/state';
 import { indentOnInput, type LanguageDescription } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import {
@@ -51,6 +57,14 @@ export interface AtomicCodeMirrorEditorHandle {
   redo: () => void;
   openSearch: (query?: string) => void;
   closeSearch: () => void;
+  /**
+   * Scroll the first match of `query` into view with a brief fade-out
+   * highlight — no search panel, no cursor movement. Designed for
+   * navigation cases like "open this atom from a search result and
+   * take me to the relevant paragraph". Matches the behavior of
+   * `initialRevealText` but as an imperative action after mount.
+   */
+  revealText: (query: string) => void;
   isSearchOpen: () => boolean;
   getMarkdown: () => string;
   getContentDOM: () => HTMLElement | null;
@@ -79,6 +93,21 @@ export interface AtomicCodeMirrorEditorProps {
    * query already active without re-typing.
    */
   initialSearchText?: string | null;
+
+  /**
+   * If set, reveals the first match of this query in the document with
+   * a brief scroll-into-view and fade-out highlight — no search panel,
+   * no cursor movement. Less intrusive alternative to
+   * `initialSearchText` for "open an atom from a search result and take
+   * me to the relevant paragraph" flows.
+   *
+   * The matcher falls back progressively — exact string, whitespace-
+   * collapsed variant, individual lines, then truncated prefixes (140
+   * and 80 chars) — so hits from LLM-generated snippets or chunked
+   * search excerpts still resolve even when they don't match the
+   * source byte-for-byte.
+   */
+  initialRevealText?: string | null;
 
   /**
    * Skip any implicit focus behavior on mount. Defaults to `false`;
@@ -183,6 +212,7 @@ export function AtomicCodeMirrorEditor({
   markdownSource,
   documentId,
   initialSearchText,
+  initialRevealText,
   blurEditorOnMount,
   onMarkdownChange,
   onLinkClick,
@@ -192,6 +222,7 @@ export function AtomicCodeMirrorEditor({
 }: AtomicCodeMirrorEditorProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const clearRevealTimerRef = useRef<number | null>(null);
   const onMarkdownChangeRef = useRef(onMarkdownChange);
   const onLinkClickRef = useRef(onLinkClick);
 
@@ -270,6 +301,7 @@ export function AtomicCodeMirrorEditor({
             if (!update.docChanged) return;
             onMarkdownChangeRef.current?.(update.state.doc.toString());
           }),
+          initialRevealField,
           // Consumer extensions last so they compose on top of the
           // built-ins (e.g. a custom keymap wrapped in Prec.high will
           // beat the default keymap above). Extensions intentionally
@@ -301,11 +333,24 @@ export function AtomicCodeMirrorEditor({
     }
 
     return () => {
+      if (clearRevealTimerRef.current !== null) {
+        window.clearTimeout(clearRevealTimerRef.current);
+        clearRevealTimerRef.current = null;
+      }
       view.destroy();
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorIdentity]);
+
+  // If a reveal query was passed, scroll the first match into view
+  // with the fade highlight right after mount. Runs in its own effect
+  // so the text can change without re-mounting the editor.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !initialRevealText) return;
+    revealInitialMatch(viewRef, view, initialRevealText, clearRevealTimerRef);
+  }, [editorIdentity, initialRevealText]);
 
   // Publish the imperative handle. Lives in its own effect so changing
   // `editorHandleRef` identity doesn't rebuild the view.
@@ -335,6 +380,11 @@ export function AtomicCodeMirrorEditor({
         const view = viewRef.current;
         if (view) closeSearchPanel(view);
       },
+      revealText: (query) => {
+        const view = viewRef.current;
+        if (!view || !query) return;
+        revealInitialMatch(viewRef, view, query, clearRevealTimerRef);
+      },
       isSearchOpen: () => {
         const view = viewRef.current;
         return view ? searchPanelOpen(view.state) : false;
@@ -348,6 +398,168 @@ export function AtomicCodeMirrorEditor({
   }, [editorHandleRef]);
 
   return <div ref={rootRef} className="atomic-cm-editor" />;
+}
+
+// ---------------------------------------------------------------------
+// Initial reveal
+//
+// "Reveal" is a one-shot highlight-and-scroll: when a consumer opens
+// the editor with an associated query (e.g. the user arrived from a
+// search result), we paint the first match with a subtle fade-out
+// background and scroll it near the top of the viewport. No cursor
+// move, no search panel. The highlight clears itself after a beat
+// so the reader can focus on the content.
+
+const setInitialReveal = StateEffect.define<{ from: number; to: number } | null>();
+
+const initialRevealField = StateField.define({
+  create() {
+    return Decoration.none;
+  },
+  update(decorations, tr) {
+    decorations = decorations.map(tr.changes);
+    for (const effect of tr.effects) {
+      if (!effect.is(setInitialReveal)) continue;
+      if (!effect.value) {
+        decorations = Decoration.none;
+        continue;
+      }
+      decorations = Decoration.set([
+        Decoration.mark({ class: 'cm-initialRevealMatch' }).range(
+          effect.value.from,
+          effect.value.to,
+        ),
+      ]);
+    }
+    return decorations;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+function revealInitialMatch(
+  viewRef: MutableRefObject<EditorView | null>,
+  view: EditorView,
+  queryText: string,
+  clearRevealTimerRef: MutableRefObject<number | null>,
+) {
+  const match = findInitialRevealRange(view.state.doc, queryText);
+  if (!match) return;
+
+  const { from, to } = match;
+  view.dispatch({
+    effects: [
+      setInitialReveal.of({ from, to }),
+      EditorView.scrollIntoView(from, { y: 'start', yMargin: 72 }),
+    ],
+  });
+
+  // After CM6 paints the highlight, try to scroll the line NEAR THE
+  // TOP of whatever scrolls above it — CM6's built-in scrollIntoView
+  // only pins the position to the view's own scroller, which is fine
+  // until the editor is embedded in a larger scrolling surface
+  // (common in reader shells). Walk to find the actual scroll parent
+  // and align there.
+  requestAnimationFrame(() => {
+    if (viewRef.current !== view) return;
+    const el =
+      view.dom.querySelector('.cm-initialRevealMatch')?.closest('.cm-line') ??
+      view.dom.querySelector('.cm-initialRevealMatch');
+    if (el instanceof HTMLElement) {
+      scrollMatchNearTop(el, 72);
+    }
+  });
+
+  if (clearRevealTimerRef.current !== null) {
+    window.clearTimeout(clearRevealTimerRef.current);
+  }
+  clearRevealTimerRef.current = window.setTimeout(() => {
+    if (viewRef.current !== view) return;
+    view.dispatch({ effects: setInitialReveal.of(null) });
+    clearRevealTimerRef.current = null;
+  }, REVEAL_FADE_MS);
+}
+
+const REVEAL_FADE_MS = 3200;
+
+function findInitialRevealRange(
+  docText: EditorState['doc'],
+  queryText: string,
+): { from: number; to: number } | null {
+  for (const candidate of buildRevealCandidates(queryText)) {
+    const query = new SearchQuery({ search: candidate });
+    if (!query.valid || !query.search) continue;
+
+    const cursor = query.getCursor(docText);
+    const first = cursor.next();
+    if (!first.done && first.value.from !== first.value.to) {
+      return first.value;
+    }
+  }
+
+  return null;
+}
+
+// Try progressively-looser variants of the query so hits still
+// resolve when the consumer's search returned an LLM-massaged snippet
+// that doesn't match the source byte-for-byte (different whitespace,
+// truncated, multi-line collapsed).
+function buildRevealCandidates(queryText: string): string[] {
+  const candidates = new Set<string>();
+  const trimmed = queryText.trim();
+  if (!trimmed) return [];
+
+  candidates.add(trimmed);
+
+  const collapsed = trimmed.replace(/\s+/g, ' ').trim();
+  if (collapsed) candidates.add(collapsed);
+
+  for (const line of trimmed
+    .split('\n')
+    .map((part) => part.trim())
+    .filter(Boolean)) {
+    candidates.add(line);
+    const lineCollapsed = line.replace(/\s+/g, ' ').trim();
+    if (lineCollapsed) candidates.add(lineCollapsed);
+  }
+
+  if (collapsed.length > 140) candidates.add(collapsed.slice(0, 140).trim());
+  if (collapsed.length > 80) candidates.add(collapsed.slice(0, 80).trim());
+
+  // Skip candidates that are too short to be meaningfully
+  // distinguishing — but always keep the original trimmed query as a
+  // last-ditch option. 12 chars is enough to avoid "the" or "an"
+  // dominating the first-match selection.
+  return [...candidates].filter(
+    (candidate) => candidate.length >= 12 || candidate === trimmed,
+  );
+}
+
+function scrollMatchNearTop(match: HTMLElement, offset: number) {
+  const scrollParent = findScrollParent(match);
+  if (!scrollParent) {
+    match.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  const parentRect = scrollParent.getBoundingClientRect();
+  const matchRect = match.getBoundingClientRect();
+  const nextTop =
+    scrollParent.scrollTop + (matchRect.top - parentRect.top) - offset;
+  scrollParent.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' });
+}
+
+function findScrollParent(node: HTMLElement): HTMLElement | null {
+  let current: HTMLElement | null = node.parentElement;
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    if (
+      (overflowY === 'auto' || overflowY === 'scroll') &&
+      current.scrollHeight > current.clientHeight
+    ) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------
