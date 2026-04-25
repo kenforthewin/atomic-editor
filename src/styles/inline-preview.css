@@ -215,6 +215,35 @@
   opacity: 1;
 }
 
+.cm-atomic-wiki-link {
+  color: var(--atomic-editor-link, #60a5fa);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.cm-atomic-wiki-link:hover {
+  color: var(--atomic-editor-link-hover, #93c5fd);
+}
+
+.cm-atomic-wiki-link-missing,
+.cm-atomic-wiki-link-unresolved {
+  color: var(--atomic-editor-fg-muted, #888);
+  text-decoration-style: dotted;
+}
+
+.cm-atomic-wiki-link-loading {
+  color: var(--atomic-editor-fg-muted, #888);
+}
+
+.cm-atomic-wiki-link-hidden-syntax {
+  color: transparent;
+  font-size: 0;
+  letter-spacing: 0;
+  user-select: none;
+}
+
 /* Horizontal rule — on inactive lines, the raw `***` / `---` /
  * `___` characters are hidden by Decoration.replace, and a visual
  * rule is drawn through the center of the line via a pseudo-element.

@@ -41,7 +41,7 @@ import {
 } from '@codemirror/search';
 
 import { atomicEditorTheme, atomicMarkdownSyntax } from './atomic-theme';
-import { extendEmphasisPair } from './edit-helpers';
+import { autoCloseCodeFence, extendEmphasisPair } from './edit-helpers';
 import { imageBlocks } from './image-blocks';
 import { inlinePreview } from './inline-preview';
 import { tables } from './table-widget';
@@ -258,6 +258,7 @@ export function AtomicCodeMirrorEditor({
           // Obsidian-style bracket pairing.
           closeBrackets(),
           extendEmphasisPair,
+          autoCloseCodeFence,
           EditorView.lineWrapping,
           // Find-in-document. `top: true` drops the panel above the
           // editor (matching Obsidian / the prior Milkdown panel).

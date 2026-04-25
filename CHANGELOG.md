@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.3.0]
+
+### Added
+
+- **Wiki-link extension for atom-style `[[...]]` links.** Consumers can now
+  compose `wikiLinks()` into the editor to render labeled wiki links, resolve
+  bare targets asynchronously, open links from rendered text, and provide
+  CodeMirror autocomplete suggestions. The extension supports custom
+  serialization, resolver policies, debounced suggestions, and leaves draft
+  links editable while the cursor is inside them.
+- **Code-fence auto-close.** Typing an opening triple-backtick fence now inserts
+  the matching closing fence so a fence added in the middle of a note does not
+  swallow all following content.
+- **Demo wiki-link deeplinks.** The dev demo includes sample wiki-link
+  suggestions, async resolution, and a lightweight deeplink readout for manual
+  testing.
+
+### Fixed
+
+- **Markdown link icon click behavior.** Clicking the rendered external-link
+  icon next to a markdown link no longer expands the raw markdown; only clicking
+  the link text itself enters edit mode.
+- **Missing wiki-link Backspace behavior.** Backspacing immediately after a
+  rendered missing bare link now first reveals the raw `[[...]]` source, then
+  normal Backspace edits inside the link instead of pulling the rendered link
+  through preceding content.
+
+### Changed
+
+- The dev server now binds to `0.0.0.0` and accepts arbitrary dev hostnames,
+  which makes package-level testing easier from LAN and tunneled environments.
+
 ## [0.2.1]
 
 ### Fixed

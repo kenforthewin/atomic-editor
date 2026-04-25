@@ -1,6 +1,6 @@
 {
   "name": "@atomic-editor/editor",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "CodeMirror 6 markdown editor with Obsidian-style inline live preview.",
   "keywords": [
     "codemirror",
@@ -53,7 +53,7 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0",
     "build": "tsc -p tsconfig.build.json && cpy src/styles/inline-preview.css dist/styles --flat",
     "build:demo": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -61,6 +61,7 @@
     "test:watch": "vitest",
     "test:e2e": "node scripts/test-editor.mjs",
     "test:e2e:headed": "node scripts/test-editor.mjs --headed",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
   "peerDependencies": {

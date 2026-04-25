@@ -72,6 +72,30 @@ const previewFrozenField = StateField.define<boolean>({
   },
 });
 
+function linkIconHitTarget(event: MouseEvent, root?: HTMLElement): HTMLElement | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  const linkEl = target.closest<HTMLElement>('.cm-atomic-link');
+  if (!linkEl || (root && !root.contains(linkEl))) return null;
+
+  // The icon is a `::after` pseudo-element, so it doesn't have its own
+  // event target. Compute the same trailing hit-zone used by the click
+  // opener and treat pointerdown in that zone as "on the icon", not
+  // "inside editable link text".
+  const rects = Array.from(linkEl.getClientRects());
+  if (rects.length === 0) return null;
+  const lastRect = rects[rects.length - 1];
+  const emSize = parseFloat(window.getComputedStyle(linkEl).fontSize);
+  const iconZone = emSize * 1.25;
+  const onIcon =
+    event.clientX >= lastRect.right - iconZone &&
+    event.clientX <= lastRect.right &&
+    event.clientY >= lastRect.top &&
+    event.clientY <= lastRect.bottom;
+
+  return onIcon ? linkEl : null;
+}
+
 // Tracks mouse state on the editor and drives the freeze flag. We listen
 // on the content DOM for pointerdown and on the window for pointerup —
 // users can release outside the editor after a drag, and we'd miss the
@@ -90,6 +114,15 @@ const freezeMousePlugin = ViewPlugin.fromClass(
       // the scrollbar chrome.
       const target = event.target;
       if (!(target instanceof Node) || !this.view.contentDOM.contains(target)) {
+        return;
+      }
+      if (linkIconHitTarget(event, this.view.contentDOM)) {
+        // Let the follow-up click open the link, but stop CM6 from
+        // interpreting the icon press as a text-editing click. Without
+        // this, pointerdown moves the selection into the Link node and
+        // reveals `[label](url)` before the click handler opens it.
+        event.preventDefault();
+        event.stopImmediatePropagation();
         return;
       }
       this.down = true;
@@ -824,32 +857,8 @@ function makeLinkClickHandler(onLinkClick: (url: string) => void): Extension {
     click: (event, view) => {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
       if (event.button !== 0) return false;
-      const target = event.target;
-      if (!(target instanceof Element)) return false;
-      const linkEl = target.closest<HTMLElement>('.cm-atomic-link');
+      const linkEl = linkIconHitTarget(event, view.contentDOM);
       if (!linkEl) return false;
-
-      // Only fire on clicks within the trailing external-link icon,
-      // not on the link text itself. The text stays editable
-      // (click-to-place-caret); the icon is the explicit "open"
-      // affordance. The icon is a `::after` pseudo-element so we
-      // can't listen on it directly — compute its pixel bounds from
-      // the link's last client rect (last, because wrapped links
-      // only have the icon after the final visual line) and compare
-      // against the click coordinates.
-      const rects = Array.from(linkEl.getClientRects());
-      if (rects.length === 0) return false;
-      const lastRect = rects[rects.length - 1];
-      const emSize = parseFloat(window.getComputedStyle(linkEl).fontSize);
-      // Icon CSS: 0.78em width + 0.32em margin-left. Add a small hit
-      // slop so touch / imprecise mouse clicks still land.
-      const iconZone = emSize * 1.25;
-      const onIcon =
-        event.clientX >= lastRect.right - iconZone &&
-        event.clientX <= lastRect.right &&
-        event.clientY >= lastRect.top &&
-        event.clientY <= lastRect.bottom;
-      if (!onIcon) return false;
 
       const pos = view.posAtDOM(linkEl);
       if (pos < 0) return false;

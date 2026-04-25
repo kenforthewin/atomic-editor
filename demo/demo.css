@@ -141,6 +141,27 @@ body {
   white-space: nowrap;
 }
 
+.demo-deeplink {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.demo-deeplink-value {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--demo-border);
+  border-radius: 6px;
+  padding: 0.28rem 0.5rem;
+  color: var(--demo-fg);
+  background: color-mix(in srgb, var(--demo-panel) 86%, var(--demo-bg) 14%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+}
+
 .demo-canvas {
   position: relative;
   overflow: hidden;
