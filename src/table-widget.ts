@@ -803,7 +803,12 @@ function attachCellEditing(
     // textContent (not innerText) so `display: none` delimiters inside
     // mark wraps are still captured — otherwise a cell containing
     // `**bold**` would serialize to just `bold` on every keystroke.
-    const raw = (source.textContent ?? '').replace(/\s+/g, ' ').trim();
+    // Flatten newlines only (cells are single-line). Do not trim or
+    // collapse spaces here: a just-typed trailing space must survive so
+    // the next character can follow it, and consecutive spaces must not
+    // shorten the string under the caret. Leading/trailing trim happens
+    // later in `readCellSource` when serializing to markdown.
+    const raw = (source.textContent ?? '').replace(/\r?\n/g, ' ');
     cell.dataset.raw = raw;
     const offset = getCaretCharOffset(source);
     renderCellSourceDecorated(source);
