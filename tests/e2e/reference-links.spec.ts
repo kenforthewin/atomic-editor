@@ -79,7 +79,7 @@ test('@smoke a real link keeps its colour and icon while the cursor is inside it
   expect(icon).not.toBe('none');
 });
 
-test('wiki-link source stays link-coloured while the cursor is inside it', async ({
+test('wiki-link source keeps link styling and its icon while the cursor is inside it', async ({
   page,
 }) => {
   await loadMarkdown(page, 'plain words\n\nsee [[atom-1|Target]] here', {
@@ -92,6 +92,15 @@ test('wiki-link source stays link-coloured while the cursor is inside it', async
   expect(await colorOfText(page, 'atom-1')).not.toBe(
     await colorOfText(page, 'plain words'),
   );
+
+  // Styling covers the inner `[target|label]` and nothing more, so the
+  // icon lands between the closing brackets, where it always did.
+  const inner = page.locator('.cm-atomic-wiki-link-active .cm-atomic-link');
+  await expect(inner).toHaveText('[atom-1|Target]');
+  const icon = await inner.evaluate(
+    (element) => getComputedStyle(element, '::after').content,
+  );
+  expect(icon).not.toBe('none');
 });
 
 test('a wiki link split across two lines is painted as ordinary text', async ({

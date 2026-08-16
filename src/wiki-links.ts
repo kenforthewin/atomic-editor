@@ -357,6 +357,13 @@ function buildDecorations(
 
     if (!readOnly && isSelectionInsideLink(state, link)) {
       builder.add(link.from, link.to, Decoration.mark({ class: 'cm-atomic-wiki-link-active' }));
+      // Link styling — colour, underline, and the trailing icon — over the
+      // inner `[target|label]`, the exact range lezer reads as a shortcut
+      // reference. Revealed source has always looked like this; it just
+      // used to come from painting every Link node, including references
+      // that resolve to nothing. Applying it here keeps the appearance
+      // while leaving genuine unresolved references as plain text.
+      builder.add(link.from + 1, link.to - 1, Decoration.mark({ class: 'cm-atomic-link' }));
       continue;
     }
 
