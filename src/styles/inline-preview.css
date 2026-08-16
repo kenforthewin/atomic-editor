@@ -277,6 +277,19 @@
   color: var(--atomic-editor-link-hover, #a5b4fc);
 }
 
+/* Revealed source, while the cursor is inside the link. It reads as a
+ * link the author is editing, matching the collapsed chip's colour and
+ * underline. Previously this styling arrived by accident: lezer parses
+ * the inner `[target|label]` of a wiki link as a shortcut reference, and
+ * every Link node used to be painted. Now that unresolved references are
+ * left alone, the wiki-link extension styles its own source. */
+.cm-atomic-wiki-link-active {
+  color: var(--atomic-editor-link, #818cf8);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
 .cm-atomic-wiki-link-missing,
 .cm-atomic-wiki-link-unresolved {
   color: var(--atomic-editor-fg-muted, #888);

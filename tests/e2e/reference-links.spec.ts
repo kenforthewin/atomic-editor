@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { loadMarkdown, openHarness } from './support/harness';
+import { focusEditor, loadMarkdown, openHarness } from './support/harness';
 
 test.beforeEach(async ({ page }) => openHarness(page));
 
@@ -55,6 +55,41 @@ test('a reference with a definition is still painted as a link', async ({
   );
 
   expect(await colorOfText(page, 'note')).not.toBe(
+    await colorOfText(page, 'plain words'),
+  );
+});
+
+test('@smoke a real link keeps its colour and icon while the cursor is inside it', async ({
+  page,
+}) => {
+  await loadMarkdown(page, 'plain words\n\nsee [note](https://example.com)');
+  await focusEditor(page);
+  // Click the link text to put the cursor in it, which reveals the source.
+  await page.locator('.cm-atomic-link').click({ position: { x: 4, y: 4 } });
+
+  const link = page.locator('.cm-atomic-link');
+  await expect(link).toContainText('](https://example.com)');
+  expect(await colorOfText(page, 'note')).not.toBe(
+    await colorOfText(page, 'plain words'),
+  );
+  // The external-link icon is a ::after on the link element.
+  const icon = await link.evaluate(
+    (element) => getComputedStyle(element, '::after').content,
+  );
+  expect(icon).not.toBe('none');
+});
+
+test('wiki-link source stays link-coloured while the cursor is inside it', async ({
+  page,
+}) => {
+  await loadMarkdown(page, 'plain words\n\nsee [[atom-1|Target]] here', {
+    wikiLinks: true,
+  });
+  await focusEditor(page);
+  await page.locator('.cm-atomic-wiki-link').click({ modifiers: ['Shift'] });
+
+  await expect(page.locator('.cm-atomic-wiki-link-active')).toHaveCount(1);
+  expect(await colorOfText(page, 'atom-1')).not.toBe(
     await colorOfText(page, 'plain words'),
   );
 });
