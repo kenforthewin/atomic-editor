@@ -245,6 +245,50 @@ function linkDestinationUrl(link: SyntaxNode, doc: Text): SyntaxNode | null {
   );
 }
 
+// CommonMark matches reference labels after stripping the surrounding
+// brackets, trimming, collapsing internal whitespace runs, and case
+// folding.
+function normalizeLinkLabel(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+// The label a reference link resolves through: the explicit one in
+// `[text][label]`, or the link text itself for the collapsed
+// (`[text][]`) and shortcut (`[text]`) forms.
+function linkReferenceLabel(link: SyntaxNode, doc: Text): string | null {
+  const explicit = link.getChildren('LinkLabel')[0];
+  if (explicit) {
+    const inner = doc.sliceString(explicit.from + 1, explicit.to - 1);
+    if (inner.trim() !== '') return normalizeLinkLabel(inner);
+  }
+  const marks = link.getChildren('LinkMark');
+  const open = marks[0];
+  const close = marks[1];
+  if (!open || !close || open.to > close.from) return null;
+  return normalizeLinkLabel(doc.sliceString(open.to, close.from));
+}
+
+// Lezer emits a `Link` node for every bracketed run that *could* be a
+// link, including reference forms with no matching definition. Per
+// CommonMark those are literal text: `[foo]` on its own renders as
+// `[foo]`, brackets and all. Styling them as links (and hiding their
+// brackets) makes ordinary prose — `see [note] below`, or a wiki link
+// broken across a line — look like something clickable that isn't.
+function linkResolves(
+  link: SyntaxNode,
+  doc: Text,
+  definedLabels: Set<string>,
+): boolean {
+  // An inline link carries its own destination. The `(` test catches the
+  // empty-destination form `[text]()`, which has no URL node.
+  const inline = link
+    .getChildren('LinkMark')
+    .some((mark) => doc.sliceString(mark.from, mark.to) === '(');
+  if (inline) return true;
+  const label = linkReferenceLabel(link, doc);
+  return label != null && definedLabels.has(label);
+}
+
 class BulletWidget extends WidgetType {
   eq(): boolean {
     return true;
@@ -420,6 +464,16 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
   // line-based reveal is the right fit for `![alt](url)`.
   const activeLinkStarts = new Set<number>();
 
+  // A link reference definition may sit anywhere in the document,
+  // including after the link that uses it, so whether a `Link` node
+  // resolves cannot be decided while the walk is passing it. Both the
+  // link mark and the bracket-hiding for its children are collected
+  // here and emitted once the walk has seen every definition.
+  const definedLabels = new Set<string>();
+  const pendingLinks: SyntaxNode[] = [];
+  const pendingLinkSyntax: { from: number; to: number; linkFrom: number }[] =
+    [];
+
   // Single pre-order walk. A tree walk visits a parent before its
   // children, which lets us compute two pieces of look-ahead state on
   // the way in — right before the children that depend on them:
@@ -450,6 +504,14 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
           for (let n = firstLine; n <= lastLine; n++) activeLines.add(n);
         }
       }
+      if (node.name === 'LinkReference') {
+        const label = node.node.getChildren('LinkLabel')[0];
+        if (label) {
+          definedLabels.add(
+            normalizeLinkLabel(doc.sliceString(label.from + 1, label.to - 1)),
+          );
+        }
+      }
       if (node.name === 'Link' && view.hasFocus) {
         for (const range of state.selection.ranges) {
           // Inclusive overlap: cursor sitting exactly on either
@@ -473,7 +535,13 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
 
       const markClass = INLINE_MARK_CLASS[node.name];
       if (markClass && node.from < node.to) {
-        ranges.push(Decoration.mark({ class: markClass }).range(node.from, node.to));
+        if (node.name === 'Link') {
+          pendingLinks.push(node.node);
+        } else {
+          ranges.push(
+            Decoration.mark({ class: markClass }).range(node.from, node.to),
+          );
+        }
       }
 
       if (HIDEABLE_SYNTAX.has(node.name) && node.from < node.to) {
@@ -484,12 +552,14 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
         // Image node falls through to line-based — images have
         // their own widget UX that the line-based reveal fits.
         let shouldHide: boolean;
+        let linkParentFrom: number | undefined;
         if (LINK_CHILD_SYNTAX.has(node.name)) {
           let parent = node.node.parent;
           while (parent && parent.name !== 'Link' && parent.name !== 'Image') {
             parent = parent.parent;
           }
           if (parent && parent.name === 'Link') {
+            linkParentFrom = parent.from;
             shouldHide = !activeLinkStarts.has(parent.from);
           } else {
             shouldHide = !activeLines.has(lineNum);
@@ -505,7 +575,18 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
               hideTo++;
             }
           }
-          pushReplace(ranges, doc, node.from, hideTo);
+          if (linkParentFrom === undefined) {
+            pushReplace(ranges, doc, node.from, hideTo);
+          } else {
+            // Brackets only collapse if the link turns out to resolve;
+            // an unresolved reference keeps them, because they are the
+            // literal text the document renders to.
+            pendingLinkSyntax.push({
+              from: node.from,
+              to: hideTo,
+              linkFrom: linkParentFrom,
+            });
+          }
         }
       }
 
@@ -727,6 +808,22 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
       }
     },
   });
+
+  // Every definition has now been seen, so the deferred link work can
+  // be decided. Unresolved references get neither the link mark nor
+  // the bracket collapse: they stay the literal text they render to.
+  const resolvedLinkStarts = new Set<number>();
+  for (const link of pendingLinks) {
+    if (!linkResolves(link, doc, definedLabels)) continue;
+    resolvedLinkStarts.add(link.from);
+    ranges.push(
+      Decoration.mark({ class: 'cm-atomic-link' }).range(link.from, link.to),
+    );
+  }
+  for (const syntax of pendingLinkSyntax) {
+    if (!resolvedLinkStarts.has(syntax.linkFrom)) continue;
+    pushReplace(ranges, doc, syntax.from, syntax.to);
+  }
 
   // Supplemental inline marks for the line containing the cursor.
   // CommonMark's flanking rules say that `**foo **` is not emphasis
