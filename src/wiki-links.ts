@@ -373,7 +373,12 @@ function buildDecorations(
         link.labelFrom,
         link.labelTo,
         Decoration.mark({
-          class: 'cm-atomic-wiki-link cm-atomic-wiki-link-resolved',
+          // `cm-atomic-link` carries the trailing external-link icon. A
+          // labeled link's text is real document text, so it used to pick
+          // the class up from the Link node lezer read inside the brackets
+          // — the icon has always been part of this chip. (The bare form
+          // renders through a widget and has never had one.)
+          class: 'cm-atomic-wiki-link cm-atomic-wiki-link-resolved cm-atomic-link',
           attributes: { 'data-wiki-link-target': link.target },
         }),
       );

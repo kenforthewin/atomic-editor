@@ -103,6 +103,19 @@ test('wiki-link source keeps link styling and its icon while the cursor is insid
   expect(icon).not.toBe('none');
 });
 
+test('@smoke a collapsed labeled wiki link keeps its external-link icon', async ({
+  page,
+}) => {
+  await loadMarkdown(page, 'see [[atom-1|Target]] here', { wikiLinks: true });
+
+  const chip = page.locator('.cm-atomic-wiki-link');
+  await expect(chip).toHaveText('Target');
+  const icon = await chip.evaluate(
+    (element) => getComputedStyle(element, '::after').content,
+  );
+  expect(icon).not.toBe('none');
+});
+
 test('a wiki link split across two lines is painted as ordinary text', async ({
   page,
 }) => {
