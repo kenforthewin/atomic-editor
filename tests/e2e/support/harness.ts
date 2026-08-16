@@ -3,6 +3,7 @@ import { expect, type Page } from '@playwright/test';
 export interface HarnessOptions {
   readOnly?: boolean;
   theme?: 'dark' | 'light';
+  wikiLinks?: boolean;
 }
 
 interface HarnessWindow extends Window {

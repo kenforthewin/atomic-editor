@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [Unreleased]
+
+### Fixed
+
+- Reference links render as links only when a matching link reference
+  definition exists. `[foo]` with no definition is literal text per CommonMark;
+  it previously got link styling, an external-link icon, and hidden brackets —
+  which also made a wiki link broken across two lines look like two links.
+- Wiki-link source collapses through a replaced range rather than a
+  `font-size: 0` mark, so the caret keeps its height after a link that ends a
+  line. The zero-height inline box left no visible cursor there.
+
 ## [0.6.2]
 
 ### Changed

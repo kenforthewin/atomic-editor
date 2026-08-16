@@ -340,6 +340,14 @@ function buildDecorations(
   resolved: ReadonlyMap<string, WikiLinkResolvedTarget | null>,
   config: WikiLinksConfig,
 ): DecorationSet {
+  // Source syntax collapses with Decoration.replace, matching how the
+  // inline preview hides every other markdown token. It used to be a
+  // mark styled `font-size: 0`, which keeps the characters in the DOM
+  // as a zero-height box — and the caret is measured against the box it
+  // sits in. A link at the end of a line left the caret zero pixels
+  // tall (invisible), and `End` measured the visual line boundary short
+  // of the link's end, landing the caret inside the link and revealing
+  // its source instead.
   const builder = new RangeSetBuilder<Decoration>();
   const links = findWikiLinksInVisibleRanges(state.doc, [{ from: 0, to: state.doc.length }]);
   const readOnly = state.facet(readOnlyFacet);
@@ -353,7 +361,7 @@ function buildDecorations(
     }
 
     if (link.label && link.labelFrom != null && link.labelTo != null && link.labelFrom < link.labelTo) {
-      builder.add(link.from, link.labelFrom, Decoration.mark({ class: 'cm-atomic-wiki-link-hidden-syntax' }));
+      builder.add(link.from, link.labelFrom, Decoration.replace({}));
       builder.add(
         link.labelFrom,
         link.labelTo,
@@ -362,7 +370,7 @@ function buildDecorations(
           attributes: { 'data-wiki-link-target': link.target },
         }),
       );
-      builder.add(link.labelTo, link.to, Decoration.mark({ class: 'cm-atomic-wiki-link-hidden-syntax' }));
+      builder.add(link.labelTo, link.to, Decoration.replace({}));
       continue;
     }
 
@@ -378,13 +386,11 @@ function buildDecorations(
         ? target.status ?? 'resolved'
         : 'missing';
 
-    builder.add(link.from, link.to, Decoration.mark({ class: 'cm-atomic-wiki-link-hidden-syntax' }));
     builder.add(
+      link.from,
       link.to,
-      link.to,
-      Decoration.widget({
+      Decoration.replace({
         widget: new WikiLinkWidget(link.target, label, status),
-        side: -1,
       }),
     );
   }

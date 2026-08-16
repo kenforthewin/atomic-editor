@@ -76,8 +76,10 @@ describe('wikiLinks', () => {
     expect(link?.dataset.wikiLinkTarget).toBe('atom-123');
     expect(link?.textContent).toBe('Project Atlas');
 
-    const hiddenSyntax = host.querySelector('.cm-atomic-wiki-link-hidden-syntax');
-    expect(hiddenSyntax?.textContent).toContain('atom-123');
+    // Replaced, not merely styled invisible: the syntax is out of the
+    // DOM, so nothing measures the caret against a zero-height box.
+    expect(host.textContent).not.toContain('atom-123');
+    expect(host.textContent).not.toContain('[[');
   });
 
   it('leaves inline-code wiki-link text untouched', () => {

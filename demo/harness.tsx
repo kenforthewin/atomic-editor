@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   AtomicCodeMirrorEditor,
   type AtomicCodeMirrorEditorHandle,
+  wikiLinks,
 } from '@atomic-editor/editor';
 import '@atomic-editor/editor/styles.css';
 import './harness.css';
@@ -12,7 +13,16 @@ type HarnessTheme = 'dark' | 'light';
 interface HarnessOptions {
   readOnly?: boolean;
   theme?: HarnessTheme;
+  wikiLinks?: boolean;
 }
+
+// Deterministic resolution: the target becomes its own label, so a spec
+// can predict the rendered chip text exactly.
+const WIKI_LINK_EXTENSIONS = [
+  wikiLinks({
+    resolve: async (target) => ({ target, label: target, status: 'resolved' }),
+  }),
+];
 
 interface HarnessController {
   load(markdown: string, options?: HarnessOptions): Promise<void>;
@@ -32,6 +42,7 @@ interface HarnessState {
   readOnly: boolean;
   revision: number;
   theme: HarnessTheme;
+  wikiLinks: boolean;
 }
 
 function Harness() {
@@ -43,6 +54,7 @@ function Harness() {
     readOnly: false,
     revision: 0,
     theme: 'dark',
+    wikiLinks: false,
   });
 
   useLayoutEffect(() => {
@@ -56,6 +68,7 @@ function Harness() {
             readOnly: options.readOnly ?? false,
             revision: current.revision + 1,
             theme: options.theme ?? 'dark',
+            wikiLinks: options.wikiLinks ?? false,
           }));
         });
       },
@@ -89,6 +102,7 @@ function Harness() {
         <AtomicCodeMirrorEditor
           documentId={`fixture-${state.revision}`}
           editorHandleRef={handleRef}
+          extensions={state.wikiLinks ? WIKI_LINK_EXTENSIONS : undefined}
           markdownSource={state.markdown}
           onLinkClick={(url) => openedUrls.current.push(url)}
           readOnly={state.readOnly}
