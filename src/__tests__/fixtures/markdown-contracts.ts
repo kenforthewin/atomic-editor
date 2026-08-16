@@ -66,6 +66,24 @@ export const MARKDOWN_CONTRACTS: readonly MarkdownContractCase[] = [
     ],
   },
   {
+    name: 'reference link without a definition stays literal text',
+    markdown: 'see [note] below',
+    containsText: ['see [note] below'],
+    selectors: [{ selector: '.cm-atomic-link', count: 0 }],
+  },
+  {
+    name: 'reference link with a definition renders as a link',
+    markdown: 'see [note] below\n\n[note]: https://example.com',
+    containsText: ['see note below'],
+    selectors: [{ selector: '.cm-atomic-link', count: 2, text: 'note' }],
+  },
+  {
+    name: 'a bracketed span split across lines is not a link',
+    markdown: 'see [[wiki\nlink]] here',
+    containsText: ['see [[wiki', 'link]] here'],
+    selectors: [{ selector: '.cm-atomic-link', count: 0 }],
+  },
+  {
     name: 'escaped URL slashes render cleanly',
     markdown: String.raw`https:\/\/example.com`,
     containsText: ['https://example.com'],

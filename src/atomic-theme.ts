@@ -148,7 +148,11 @@ export const atomicMarkdownHighlight = HighlightStyle.define([
     color: 'var(--atomic-editor-link, #818cf8)',
   },
 
-  { tag: t.link, color: 'var(--atomic-editor-link, #818cf8)' },
+  // No `t.link` entry: a highlight style cannot see whether a reference
+  // resolves, so it would colour `[foo]` with no definition — literal
+  // text per CommonMark — like a link. Link colour comes from the
+  // `.cm-atomic-link` decoration instead, which the inline preview only
+  // emits for links that actually resolve.
   { tag: t.url, color: 'var(--atomic-editor-link, #818cf8)' },
 
   { tag: t.processingInstruction, color: 'var(--atomic-editor-fg-faint, #666)' },
